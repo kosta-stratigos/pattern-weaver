@@ -79,20 +79,14 @@ const ui = {
   driftOverlayTrack: document.querySelector("#drift-overlay-track"),
   driftOverlayClose: document.querySelector("#drift-overlay-close"),
   driftRate: document.querySelector("#drift-rate"),
-  driftRange: document.querySelector("#drift-range"),
-  driftRangeMin: document.querySelector("#drift-range-min"),
-  driftRangeMax: document.querySelector("#drift-range-max"),
-  driftRangeMinValue: document.querySelector("#drift-range-min-value"),
-  driftRangeMaxValue: document.querySelector("#drift-range-max-value"),
+  driftAmount: document.querySelector("#drift-amount"),
+  driftAmountValue: document.querySelector("#drift-amount-value"),
   swellOverlay: document.querySelector("#swell-overlay"),
   swellOverlayTrack: document.querySelector("#swell-overlay-track"),
   swellOverlayClose: document.querySelector("#swell-overlay-close"),
   swellRate: document.querySelector("#swell-rate"),
-  swellRange: document.querySelector("#swell-range"),
-  swellRangeMin: document.querySelector("#swell-range-min"),
-  swellRangeMax: document.querySelector("#swell-range-max"),
-  swellRangeMinValue: document.querySelector("#swell-range-min-value"),
-  swellRangeMaxValue: document.querySelector("#swell-range-max-value"),
+  swellAmount: document.querySelector("#swell-amount"),
+  swellAmountValue: document.querySelector("#swell-amount-value"),
   bpm: document.querySelector("#bpm"),
   bpmValue: document.querySelector("#bpm-value"),
   swing: document.querySelector("#swing"),
@@ -196,8 +190,12 @@ function clampIntegerText(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function clampLfoRateMs(value, fallback = 1500) {
-  return Math.max(5, Math.min(10000, clampIntegerText(value, fallback)));
+function clampLfoRateSeconds(value, fallback = 1.5) {
+  const numeric = Number.parseFloat(String(value ?? "").replace(/[^\d.-]/g, ""));
+  const fallbackNumeric = Number.isFinite(Number(fallback)) ? Number(fallback) : 1.5;
+  const normalized = Number.isFinite(numeric) ? numeric : fallbackNumeric;
+  const seconds = Math.abs(normalized) > 50 ? normalized / 1000 : normalized;
+  return Math.max(0.001, seconds);
 }
 
 function clampUnitPercent(value, fallback = 0) {
@@ -205,12 +203,9 @@ function clampUnitPercent(value, fallback = 0) {
   return Math.max(0, Math.min(100, resolved));
 }
 
-function clampPanSweep(value, fallback = 0) {
-  return Math.max(-100, Math.min(100, clampIntegerText(value, fallback)));
-}
-
-function clampVolumeSweep(value, fallback = 100) {
-  return Math.max(0, Math.min(100, clampIntegerText(value, fallback)));
+function clampModulationAmount(value, fallback = 0) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(0, Math.min(100, resolved));
 }
 
 function clampMidiNote(value, fallback = SYNTH_TUNE_DEFAULT_MIDI) {
@@ -252,18 +247,16 @@ function createDefaultDelaySettings() {
 function createDefaultDriftSettings() {
   return {
     enabled: false,
-    rate: 1500,
-    rangeMin: -35,
-    rangeMax: 35,
+    rate: 1.5,
+    amount: 35,
   };
 }
 
 function createDefaultSwellSettings() {
   return {
     enabled: false,
-    rate: 1800,
-    rangeMin: 65,
-    rangeMax: 100,
+    rate: 1.8,
+    amount: 18,
   };
 }
 
@@ -323,24 +316,26 @@ function normalizeDelaySettings(source = {}, fallback = createDefaultDelaySettin
 }
 
 function normalizeDriftSettings(source = {}, fallback = createDefaultDriftSettings()) {
-  const rangeMin = clampPanSweep(source.rangeMin ?? fallback.rangeMin, fallback.rangeMin);
-  const rangeMax = clampPanSweep(source.rangeMax ?? fallback.rangeMax, fallback.rangeMax);
+  const fallbackAmount = fallback.amount ?? Math.abs((fallback.rangeMax ?? 35) - (fallback.rangeMin ?? -35)) / 2;
+  const legacyAmount = source.amount ?? (source.rangeMin != null || source.rangeMax != null
+    ? Math.abs(Number(source.rangeMax ?? 35) - Number(source.rangeMin ?? -35)) / 2
+    : fallbackAmount);
   return {
     enabled: Boolean(source.enabled),
-    rate: clampLfoRateMs(source.rate ?? fallback.rate, fallback.rate),
-    rangeMin: Math.min(rangeMin, rangeMax),
-    rangeMax: Math.max(rangeMin, rangeMax),
+    rate: clampLfoRateSeconds(source.rate ?? fallback.rate, fallback.rate),
+    amount: clampModulationAmount(legacyAmount, fallbackAmount),
   };
 }
 
 function normalizeSwellSettings(source = {}, fallback = createDefaultSwellSettings()) {
-  const rangeMin = clampVolumeSweep(source.rangeMin ?? fallback.rangeMin, fallback.rangeMin);
-  const rangeMax = clampVolumeSweep(source.rangeMax ?? fallback.rangeMax, fallback.rangeMax);
+  const fallbackAmount = fallback.amount ?? Math.abs((fallback.rangeMax ?? 100) - (fallback.rangeMin ?? 65)) / 2;
+  const legacyAmount = source.amount ?? (source.rangeMin != null || source.rangeMax != null
+    ? Math.abs(Number(source.rangeMax ?? 100) - Number(source.rangeMin ?? 65)) / 2
+    : fallbackAmount);
   return {
     enabled: Boolean(source.enabled),
-    rate: clampLfoRateMs(source.rate ?? fallback.rate, fallback.rate),
-    rangeMin: Math.min(rangeMin, rangeMax),
-    rangeMax: Math.max(rangeMin, rangeMax),
+    rate: clampLfoRateSeconds(source.rate ?? fallback.rate, fallback.rate),
+    amount: clampModulationAmount(legacyAmount, fallbackAmount),
   };
 }
 
@@ -553,16 +548,12 @@ class PlaybackLayer {
     const delay = track.effects.delay;
     const drift = track.effects.drift;
     const swell = track.effects.swell;
-    const driftCenter = drift.enabled
-      ? clampPan(((drift.rangeMin + drift.rangeMax) / 2) / 100)
-      : clampPan(track.pan);
-    const driftAmplitude = drift.enabled ? Math.abs(drift.rangeMax - drift.rangeMin) / 200 : 0;
-    const swellCenterValue = swell.enabled
-      ? Math.max(0, Math.min(1, ((swell.rangeMin + swell.rangeMax) / 2) / 100))
-      : Math.max(0, Math.min(1, track.volume));
-    const swellAmplitude = swell.enabled ? Math.abs(swell.rangeMax - swell.rangeMin) / 200 : 0;
-    const driftFrequency = 1 / (clampLfoRateMs(drift.rate, 1500) / 1000);
-    const swellFrequency = 1 / (clampLfoRateMs(swell.rate, 1800) / 1000);
+    const driftCenter = clampPan(track.pan);
+    const driftAmplitude = drift.enabled ? clampModulationAmount(drift.amount, 35) / 100 : 0;
+    const swellCenterValue = Math.max(0, Math.min(1, track.volume));
+    const swellAmplitude = swell.enabled ? clampModulationAmount(swell.amount, 18) / 100 : 0;
+    const driftFrequency = 1 / clampLfoRateSeconds(drift.rate, 1.5);
+    const swellFrequency = 1 / clampLfoRateSeconds(swell.rate, 1.8);
 
     outputGain.gain.value = swellCenterValue;
     panNode.pan.value = driftCenter;
@@ -1689,17 +1680,17 @@ function isMidiNoteInTrackScale(track, midiNote) {
 function getTrackModulationValues(track, timeSeconds = 0) {
   const drift = getTrackDrift(track);
   const swell = getTrackSwell(track);
-  const driftPhase = drift.enabled ? Math.sin((timeSeconds / Math.max(0.001, clampLfoRateMs(drift.rate, 1500) / 1000)) * Math.PI * 2) : null;
-  const swellPhase = swell.enabled ? Math.sin((timeSeconds / Math.max(0.001, clampLfoRateMs(swell.rate, 1800) / 1000)) * Math.PI * 2) : null;
-  const driftNormalized = driftPhase === null ? null : (driftPhase + 1) / 2;
-  const swellNormalized = swellPhase === null ? null : (swellPhase + 1) / 2;
+  const driftPhase = drift.enabled ? Math.sin((timeSeconds / clampLfoRateSeconds(drift.rate, 1.5)) * Math.PI * 2) : null;
+  const swellPhase = swell.enabled ? Math.sin((timeSeconds / clampLfoRateSeconds(swell.rate, 1.8)) * Math.PI * 2) : null;
+  const driftAmount = clampModulationAmount(drift.amount, 35) / 100;
+  const swellAmount = clampModulationAmount(swell.amount, 18) / 100;
 
   return {
     pan: drift.enabled
-      ? clampPan((drift.rangeMin + (drift.rangeMax - drift.rangeMin) * driftNormalized) / 100)
+      ? clampPan(track.pan + driftPhase * driftAmount)
       : clampPan(track.pan),
     volume: swell.enabled
-      ? Math.max(0, Math.min(1, (swell.rangeMin + (swell.rangeMax - swell.rangeMin) * swellNormalized) / 100))
+      ? Math.max(0, Math.min(1, track.volume + swellPhase * swellAmount))
       : Math.max(0, Math.min(1, track.volume)),
   };
 }
@@ -2125,39 +2116,9 @@ function getTrackSwell(trackOrIndex) {
   return track?.effects?.swell ?? createDefaultSwellSettings();
 }
 
-function formatLfoRate(ms) {
-  if (ms >= 1000) return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 2)} s`;
-  return `${Math.round(ms)} ms`;
-}
-
-function syncDualRange(container, minValue, maxValue, minAllowed, maxAllowed) {
-  if (!(container instanceof HTMLElement)) return;
-  const span = Math.max(1, maxAllowed - minAllowed);
-  const start = ((minValue - minAllowed) / span) * 100;
-  const end = ((maxValue - minAllowed) / span) * 100;
-  container.style.setProperty("--range-start", `${start}%`);
-  container.style.setProperty("--range-end", `${end}%`);
-}
-
-function bindDualRangeBar(container, minInput, maxInput, minAllowed, maxAllowed, onChange) {
-  if (!(container instanceof HTMLElement) || !(minInput instanceof HTMLInputElement) || !(maxInput instanceof HTMLInputElement)) return;
-  container.addEventListener("pointerdown", (event) => {
-    if (event.target === minInput || event.target === maxInput) return;
-    const rect = container.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const normalized = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    const nextValue = Math.round(minAllowed + normalized * (maxAllowed - minAllowed));
-    const currentMin = Number(minInput.value);
-    const currentMax = Number(maxInput.value);
-
-    if (Math.abs(nextValue - currentMin) <= Math.abs(nextValue - currentMax)) {
-      minInput.value = String(Math.min(nextValue, currentMax));
-    } else {
-      maxInput.value = String(Math.max(nextValue, currentMin));
-    }
-
-    onChange();
-  });
+function formatLfoRate(seconds) {
+  const safeValue = clampLfoRateSeconds(seconds, 1.5);
+  return `${safeValue.toFixed(safeValue >= 10 ? 1 : safeValue >= 1 ? 2 : 3)} s`;
 }
 
 function syncFilterOverlay() {
@@ -2218,11 +2179,8 @@ function syncDriftOverlay() {
     ui.driftOverlayTrack.textContent = `${track.name} • Drift ${drift.enabled ? "enabled" : "disabled"}`;
   }
   ui.driftRate.value = String(drift.rate);
-  ui.driftRangeMin.value = String(drift.rangeMin);
-  ui.driftRangeMax.value = String(drift.rangeMax);
-  ui.driftRangeMinValue.textContent = formatPanSweepValue(drift.rangeMin);
-  ui.driftRangeMaxValue.textContent = formatPanSweepValue(drift.rangeMax);
-  syncDualRange(ui.driftRange, drift.rangeMin, drift.rangeMax, -100, 100);
+  ui.driftAmount.value = String(Math.round(drift.amount));
+  ui.driftAmountValue.textContent = `${Math.round(drift.amount)}%`;
 }
 
 function syncSwellOverlay() {
@@ -2238,11 +2196,8 @@ function syncSwellOverlay() {
     ui.swellOverlayTrack.textContent = `${track.name} • Swell ${swell.enabled ? "enabled" : "disabled"}`;
   }
   ui.swellRate.value = String(swell.rate);
-  ui.swellRangeMin.value = String(swell.rangeMin);
-  ui.swellRangeMax.value = String(swell.rangeMax);
-  ui.swellRangeMinValue.textContent = `${swell.rangeMin}%`;
-  ui.swellRangeMaxValue.textContent = `${swell.rangeMax}%`;
-  syncDualRange(ui.swellRange, swell.rangeMin, swell.rangeMax, 0, 100);
+  ui.swellAmount.value = String(Math.round(swell.amount));
+  ui.swellAmountValue.textContent = `${Math.round(swell.amount)}%`;
 }
 
 function syncSampleBrowserOverlay() {
@@ -3347,9 +3302,9 @@ function updateTrackSwell(trackIndex, patch) {
   writeStoredSession();
 }
 
-function sanitizeIntegerField(input, fallback) {
+function sanitizeFloatField(input, fallback) {
   if (!(input instanceof HTMLInputElement)) return fallback;
-  const value = clampIntegerText(input.value, fallback);
+  const value = clampLfoRateSeconds(input.value, fallback);
   input.value = String(value);
   return value;
 }
@@ -3533,17 +3488,10 @@ ui.delayOverlay.addEventListener("click", (event) => {
 });
 ui.driftRate.addEventListener("change", () => {
   const drift = getTrackDrift(state.driftOverlay.trackIndex);
-  updateTrackDrift(state.driftOverlay.trackIndex, { rate: sanitizeIntegerField(ui.driftRate, drift.rate) });
+  updateTrackDrift(state.driftOverlay.trackIndex, { rate: sanitizeFloatField(ui.driftRate, drift.rate) });
 });
-ui.driftRangeMin.addEventListener("input", () => {
-  const maxValue = Math.max(Number(ui.driftRangeMin.value), Number(ui.driftRangeMax.value));
-  ui.driftRangeMax.value = String(maxValue);
-  updateTrackDrift(state.driftOverlay.trackIndex, { rangeMin: Number(ui.driftRangeMin.value), rangeMax: maxValue });
-});
-ui.driftRangeMax.addEventListener("input", () => {
-  const minValue = Math.min(Number(ui.driftRangeMin.value), Number(ui.driftRangeMax.value));
-  ui.driftRangeMin.value = String(minValue);
-  updateTrackDrift(state.driftOverlay.trackIndex, { rangeMin: minValue, rangeMax: Number(ui.driftRangeMax.value) });
+ui.driftAmount.addEventListener("input", () => {
+  updateTrackDrift(state.driftOverlay.trackIndex, { amount: Number(ui.driftAmount.value) });
 });
 ui.driftOverlayClose.addEventListener("click", () => closeDriftOverlay());
 ui.driftOverlay.addEventListener("click", (event) => {
@@ -3552,27 +3500,10 @@ ui.driftOverlay.addEventListener("click", (event) => {
 });
 ui.swellRate.addEventListener("change", () => {
   const swell = getTrackSwell(state.swellOverlay.trackIndex);
-  updateTrackSwell(state.swellOverlay.trackIndex, { rate: sanitizeIntegerField(ui.swellRate, swell.rate) });
+  updateTrackSwell(state.swellOverlay.trackIndex, { rate: sanitizeFloatField(ui.swellRate, swell.rate) });
 });
-ui.swellRangeMin.addEventListener("input", () => {
-  const maxValue = Math.max(Number(ui.swellRangeMin.value), Number(ui.swellRangeMax.value));
-  ui.swellRangeMax.value = String(maxValue);
-  updateTrackSwell(state.swellOverlay.trackIndex, { rangeMin: Number(ui.swellRangeMin.value), rangeMax: maxValue });
-});
-ui.swellRangeMax.addEventListener("input", () => {
-  const minValue = Math.min(Number(ui.swellRangeMin.value), Number(ui.swellRangeMax.value));
-  ui.swellRangeMin.value = String(minValue);
-  updateTrackSwell(state.swellOverlay.trackIndex, { rangeMin: minValue, rangeMax: Number(ui.swellRangeMax.value) });
-});
-bindDualRangeBar(ui.driftRange, ui.driftRangeMin, ui.driftRangeMax, -100, 100, () => {
-  const minValue = Number(ui.driftRangeMin.value);
-  const maxValue = Number(ui.driftRangeMax.value);
-  updateTrackDrift(state.driftOverlay.trackIndex, { rangeMin: Math.min(minValue, maxValue), rangeMax: Math.max(minValue, maxValue) });
-});
-bindDualRangeBar(ui.swellRange, ui.swellRangeMin, ui.swellRangeMax, 0, 100, () => {
-  const minValue = Number(ui.swellRangeMin.value);
-  const maxValue = Number(ui.swellRangeMax.value);
-  updateTrackSwell(state.swellOverlay.trackIndex, { rangeMin: Math.min(minValue, maxValue), rangeMax: Math.max(minValue, maxValue) });
+ui.swellAmount.addEventListener("input", () => {
+  updateTrackSwell(state.swellOverlay.trackIndex, { amount: Number(ui.swellAmount.value) });
 });
 ui.swellOverlayClose.addEventListener("click", () => closeSwellOverlay());
 ui.swellOverlay.addEventListener("click", (event) => {

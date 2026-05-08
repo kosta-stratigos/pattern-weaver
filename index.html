@@ -496,21 +496,16 @@
         </div>
         <div class="control-stack overlay-controls">
           <label class="compact-field">
-            Rate (ms)
-            <input id="drift-rate" type="text" inputmode="numeric" value="1500" />
+            Rate (s)
+            <input id="drift-rate" type="text" inputmode="decimal" value="1.5" />
           </label>
-          <div class="compact-field">
-            <span class="dual-range-meta">
-              <span>Range</span>
-              <span><span id="drift-range-min-value">L35</span> to <span id="drift-range-max-value">R35</span></span>
-            </span>
-            <div id="drift-range" class="dual-range">
-              <div class="dual-range-track"></div>
-              <div class="dual-range-fill"></div>
-              <input id="drift-range-min" class="dual-range-input" type="range" min="-100" max="100" step="1" value="-35" />
-              <input id="drift-range-max" class="dual-range-input" type="range" min="-100" max="100" step="1" value="35" />
+          <label class="compact-field">
+            Amount (+/- %)
+            <div class="slider-row">
+              <input id="drift-amount" type="range" min="0" max="100" step="1" value="35" />
+              <span id="drift-amount-value" class="value-pill">35%</span>
             </div>
-          </div>
+          </label>
         </div>
       </section>
     </div>
@@ -527,21 +522,16 @@
         </div>
         <div class="control-stack overlay-controls">
           <label class="compact-field">
-            Rate (ms)
-            <input id="swell-rate" type="text" inputmode="numeric" value="1800" />
+            Rate (s)
+            <input id="swell-rate" type="text" inputmode="decimal" value="1.8" />
           </label>
-          <div class="compact-field">
-            <span class="dual-range-meta">
-              <span>Range</span>
-              <span><span id="swell-range-min-value">65%</span> to <span id="swell-range-max-value">100%</span></span>
-            </span>
-            <div id="swell-range" class="dual-range">
-              <div class="dual-range-track"></div>
-              <div class="dual-range-fill"></div>
-              <input id="swell-range-min" class="dual-range-input" type="range" min="0" max="100" step="1" value="65" />
-              <input id="swell-range-max" class="dual-range-input" type="range" min="0" max="100" step="1" value="100" />
+          <label class="compact-field">
+            Amount (+/- %)
+            <div class="slider-row">
+              <input id="swell-amount" type="range" min="0" max="100" step="1" value="18" />
+              <span id="swell-amount-value" class="value-pill">18%</span>
             </div>
-          </div>
+          </label>
         </div>
       </section>
     </div>
