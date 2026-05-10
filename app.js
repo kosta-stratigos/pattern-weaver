@@ -1358,6 +1358,29 @@ function resetTrackPlaybackState(trackIndex = null) {
   state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track));
 }
 
+function syncTrackPlaybackStateForPatternSwitch(trackIndex) {
+  const track = state.tracks[trackIndex];
+  if (!track) return;
+  if (!isTransportRunning()) {
+    resetTrackPlaybackState(trackIndex);
+    return;
+  }
+  const activePattern = getTrackPattern(track);
+  const visibleCellCount = getTrackVisibleCellCount(track);
+  const playbackState = state.trackPlaybackState[trackIndex] ?? createTrackPlaybackState(track);
+  playbackState.patternIndex = Math.max(0, Math.min(visibleCellCount - 1, playbackState.patternIndex ?? 0));
+  playbackState.lastPatternIndex = Math.max(-1, Math.min(visibleCellCount - 1, playbackState.lastPatternIndex ?? -1));
+  playbackState.lastTriggeredPatternIndex = Math.max(-1, Math.min(visibleCellCount - 1, playbackState.lastTriggeredPatternIndex ?? -1));
+  if (activePattern.playbackMode === "reverse") {
+    playbackState.patternDirection = -1;
+  } else if (activePattern.playbackMode !== "ping-pong") {
+    playbackState.patternDirection = 1;
+  } else if (![1, -1].includes(playbackState.patternDirection)) {
+    playbackState.patternDirection = 1;
+  }
+  state.trackPlaybackState[trackIndex] = playbackState;
+}
+
 function normalizeTrack(index, source = {}) {
   const fallback = createTrack(index + 1);
   const resolvedVoiceIndex = Number.isFinite(Number(source.voiceIndex)) ? Number(source.voiceIndex) : fallback.voiceIndex;
@@ -3456,11 +3479,12 @@ function activateTrackPattern(trackIndex, patternIndex, { selectTrack = false, m
   const track = state.tracks[trackIndex];
   if (!track) return;
   const safePatternIndex = Math.max(0, Math.min(TRACK_PATTERN_COUNT - 1, Number(patternIndex) || 0));
+  if (track.activePatternIndex === safePatternIndex && !selectTrack && !markDefined) return;
   if (selectTrack) state.selectedTrackIndex = trackIndex;
   track.activePatternIndex = safePatternIndex;
   const activePattern = getTrackPattern(track);
   if (markDefined) activePattern.isDefined = true;
-  resetTrackPlaybackState(trackIndex);
+  syncTrackPlaybackStateForPatternSwitch(trackIndex);
   if (state.pitchStepSelection.trackIndex === trackIndex) {
     state.pitchStepSelection = { trackIndex: null, cellIndex: null };
   }
