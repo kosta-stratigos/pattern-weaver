@@ -1294,8 +1294,9 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-row {
   display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
   gap: 8px;
-  align-items: center;
+  align-items: stretch;
   min-width: max-content;
 }
 
@@ -1321,6 +1322,18 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--font-display);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.pattern-step-lanes {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pattern-step-lane {
+  display: grid;
+  gap: 8px;
+  min-width: max-content;
 }
 
 .sequence-settings-stack .compact-field {
@@ -1386,6 +1399,19 @@ input[type="range"]::-moz-range-thumb {
 .step.current {
   outline: 2px solid var(--track-color);
   outline-offset: 2px;
+}
+
+.step.compact {
+  min-height: 21px;
+  font-size: 0.68rem;
+}
+
+.step-placeholder {
+  min-height: 21px;
+  border-radius: var(--pane-radius);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.015);
+  pointer-events: none;
 }
 
 @media (max-width: 920px) {

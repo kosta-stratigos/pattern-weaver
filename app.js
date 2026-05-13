@@ -101,6 +101,8 @@ const ui = {
   swingValue: document.querySelector("#swing-value"),
   trackSteps: document.querySelector("#track-steps"),
   trackStepsValue: document.querySelector("#track-steps-value"),
+  trackBars: document.querySelector("#track-bars"),
+  trackBarsValue: document.querySelector("#track-bars-value"),
   trackPlaybackMode: document.querySelector("#track-playback-mode"),
   trackStepProbability: document.querySelector("#track-step-probability"),
   trackStepProbabilityValue: document.querySelector("#track-step-probability-value"),
@@ -135,10 +137,13 @@ const SAMPLE_LIBRARY = [
   { name: "orthodox_priest_singing_1_r8j.wav", url: "./samples/orthodox_priest_singing_1_r8j.wav" },
   { name: "95721__elankford__pump-organ-mid-c.wav", url: "./samples/95721__elankford__pump-organ-mid-c.wav" },
 ];
-const SEQUENCE_BAR_COUNT = 2;
+const DEFAULT_PATTERN_BAR_COUNT = 2;
+const MAX_PATTERN_BARS = 8;
+const SEQUENCER_INLINE_BAR_LIMIT = 4;
+const BASE_GRID_STEPS_PER_BAR = 32;
 const STEPS_PER_BAR_MAX = 32;
-const BASE_GRID_STEPS = 32 * SEQUENCE_BAR_COUNT;
-const MAX_PATTERN_CELLS = STEPS_PER_BAR_MAX * SEQUENCE_BAR_COUNT;
+const BASE_GRID_STEPS = BASE_GRID_STEPS_PER_BAR * MAX_PATTERN_BARS;
+const MAX_PATTERN_CELLS = STEPS_PER_BAR_MAX * MAX_PATTERN_BARS;
 const TRACK_COUNT = 4;
 const TRACK_PATTERN_COUNT = 8;
 const PITCH_LANE_NOTE_COUNT = 60;
@@ -323,6 +328,7 @@ function createTrackPattern(id = 1, seedOffset = 0) {
     id,
     name: `Pattern ${id}`,
     isDefined: id === 1,
+    barCount: DEFAULT_PATTERN_BAR_COUNT,
     stepCount: 16,
     playbackMode: "forward",
     stepProbability: 100,
@@ -380,6 +386,7 @@ function normalizeTrackPattern(index, source = {}, fallback = createTrackPattern
     id: Number.isFinite(Number(source.id)) ? Number(source.id) : fallback.id,
     name: typeof source.name === "string" ? source.name : fallback.name,
     isDefined: Boolean(source.isDefined ?? hasLegacyPatternData ?? fallback.isDefined),
+    barCount: Math.max(1, Math.min(MAX_PATTERN_BARS, Number(source.barCount) || fallback.barCount)),
     stepCount: Math.max(1, Math.min(32, Number(source.stepCount) || fallback.stepCount)),
     playbackMode: TRACK_PLAYBACK_MODES.includes(source.playbackMode) ? source.playbackMode : fallback.playbackMode,
     stepProbability: Math.max(
@@ -1340,6 +1347,11 @@ function createTrackPlaybackState(track = createTrack(1)) {
   };
 }
 
+function formatBarCountLabel(barCount) {
+  const safeValue = Math.max(1, Math.min(MAX_PATTERN_BARS, Number(barCount) || DEFAULT_PATTERN_BAR_COUNT));
+  return `${safeValue} bar${safeValue === 1 ? "" : "s"}`;
+}
+
 function readStoredSession() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -1507,6 +1519,7 @@ function writeStoredSession() {
         id: pattern.id,
         name: pattern.name,
         isDefined: pattern.isDefined,
+        barCount: pattern.barCount,
         stepCount: pattern.stepCount,
         playbackMode: pattern.playbackMode,
         stepProbability: pattern.stepProbability,
@@ -2386,10 +2399,15 @@ function formatFilterQ(value) {
   return clampFilterQ(value).toFixed(1);
 }
 
+function getTrackBarCount(track) {
+  const activePattern = getTrackPattern(track);
+  return Math.max(1, Math.min(MAX_PATTERN_BARS, activePattern.barCount ?? DEFAULT_PATTERN_BAR_COUNT));
+}
+
 function getTrackVisibleCellCount(track) {
   const activePattern = getTrackPattern(track);
   const stepsPerBar = Math.max(1, Math.min(STEPS_PER_BAR_MAX, activePattern.stepCount ?? 16));
-  return Math.max(1, Math.min(MAX_PATTERN_CELLS, stepsPerBar * SEQUENCE_BAR_COUNT));
+  return Math.max(1, Math.min(MAX_PATTERN_CELLS, stepsPerBar * getTrackBarCount(track)));
 }
 
 function getTrackTriggerDuration(track) {
@@ -2399,7 +2417,10 @@ function getTrackTriggerDuration(track) {
 }
 
 function getTrackScheduleSlot(track, baseStep) {
-  return Math.floor((baseStep * getTrackVisibleCellCount(track)) / BASE_GRID_STEPS);
+  const visibleCellCount = getTrackVisibleCellCount(track);
+  const patternBaseSteps = BASE_GRID_STEPS_PER_BAR * getTrackBarCount(track);
+  const loopStep = ((baseStep % patternBaseSteps) + patternBaseSteps) % patternBaseSteps;
+  return Math.floor((loopStep * visibleCellCount) / patternBaseSteps);
 }
 
 function shouldAdvanceTrackStep(track, baseStep) {
@@ -2629,10 +2650,12 @@ function syncTrackSettingsOverlay() {
   const track = state.tracks[state.trackSettingsOverlay.trackIndex] ?? getSelectedTrack();
   const activePattern = getTrackPattern(track);
   if (ui.trackSettingsTrack) {
-    ui.trackSettingsTrack.textContent = `${track.name} • 2 bars • ${activePattern.name}`;
+    ui.trackSettingsTrack.textContent = `${track.name} • ${formatBarCountLabel(activePattern.barCount)} • ${activePattern.name}`;
   }
   ui.trackPatternSelect.value = String(track.activePatternIndex);
   ui.patternVoiceSelect.value = String(track.voiceIndex);
+  ui.trackBars.value = String(activePattern.barCount);
+  ui.trackBarsValue.textContent = String(activePattern.barCount);
   ui.trackSteps.value = String(activePattern.stepCount);
   ui.trackStepsValue.textContent = String(activePattern.stepCount);
   ui.trackPlaybackMode.value = activePattern.playbackMode;
@@ -3547,10 +3570,12 @@ function renderPattern(activeStep = state.currentTransportStep) {
   ui.patternGrid.innerHTML = "";
   state.tracks.forEach((track, trackIndex) => {
     const activePattern = getTrackPattern(track);
+    const barCount = getTrackBarCount(track);
+    const usesSplitLanes = barCount > SEQUENCER_INLINE_BAR_LIMIT;
+    const stepsPerBar = Math.max(1, Math.min(STEPS_PER_BAR_MAX, activePattern.stepCount ?? 16));
     const visibleCellCount = getTrackVisibleCellCount(track);
     const row = document.createElement("div");
     row.className = "pattern-row";
-    row.style.gridTemplateColumns = `88px repeat(${visibleCellCount}, minmax(32px, 1fr))`;
 
     const label = document.createElement("button");
     label.className = `pattern-row-label${trackIndex === state.selectedTrackIndex ? " active" : ""}`;
@@ -3561,50 +3586,76 @@ function renderPattern(activeStep = state.currentTransportStep) {
     });
     row.append(label);
 
-    activePattern.pattern.slice(0, visibleCellCount).forEach((enabled, cellIndex) => {
-      const stepButton = document.createElement("button");
-      const pitchSelected = state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex;
-      stepButton.className = `step${enabled ? " active" : ""}${pitchSelected ? " pitch-target" : ""}`;
-      applyTrackColor(stepButton, track.color);
-      stepButton.dataset.trackIndex = String(trackIndex);
-      stepButton.dataset.cellIndex = String(cellIndex);
-      if (cellIndex > 0 && cellIndex % Math.max(1, activePattern.stepCount) === 0) stepButton.classList.add("bar-start");
-      stepButton.textContent = String(cellIndex + 1);
-      stepButton.addEventListener("click", (event) => {
-        state.selectedTrackIndex = trackIndex;
-        if (event.shiftKey && activePattern.pattern[cellIndex]) {
-          state.pitchStepSelection = { trackIndex, cellIndex };
+    const laneShell = document.createElement("div");
+    laneShell.className = "pattern-step-lanes";
+    const laneCount = usesSplitLanes ? 2 : 1;
+    const cellsPerLane = usesSplitLanes ? stepsPerBar * SEQUENCER_INLINE_BAR_LIMIT : visibleCellCount;
+
+    for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
+      const lane = document.createElement("div");
+      lane.className = "pattern-step-lane";
+      lane.style.gridTemplateColumns = `repeat(${cellsPerLane}, minmax(32px, 1fr))`;
+      const laneStart = laneIndex * cellsPerLane;
+      const laneEnd = Math.min(visibleCellCount, laneStart + cellsPerLane);
+
+      for (let cellIndex = laneStart; cellIndex < laneEnd; cellIndex += 1) {
+        const enabled = activePattern.pattern[cellIndex];
+        const pitchSelected = state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex;
+        const stepButton = document.createElement("button");
+        stepButton.className = `step${enabled ? " active" : ""}${pitchSelected ? " pitch-target" : ""}${usesSplitLanes ? " compact" : ""}`;
+        applyTrackColor(stepButton, track.color);
+        stepButton.dataset.trackIndex = String(trackIndex);
+        stepButton.dataset.cellIndex = String(cellIndex);
+        if (cellIndex > 0 && cellIndex % Math.max(1, activePattern.stepCount) === 0) stepButton.classList.add("bar-start");
+        stepButton.textContent = String(cellIndex + 1);
+        stepButton.addEventListener("click", (event) => {
+          state.selectedTrackIndex = trackIndex;
+          if (event.shiftKey && activePattern.pattern[cellIndex]) {
+            state.pitchStepSelection = { trackIndex, cellIndex };
+            syncUi();
+            renderTrackSelector();
+            renderEffectsMatrix();
+            renderMixer();
+            renderPattern(activeStep);
+            drawWaveform();
+            writeStoredSession();
+            return;
+          }
+          if (!event.shiftKey && state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex) {
+            state.pitchStepSelection = { trackIndex: null, cellIndex: null };
+          }
+          activePattern.pattern[cellIndex] = !activePattern.pattern[cellIndex];
+          if (activePattern.pattern[cellIndex]) {
+            assignPitchFillToStep(track, cellIndex);
+          } else {
+            activePattern.stepPitches[cellIndex] = null;
+            if (state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex) {
+              state.pitchStepSelection = { trackIndex: null, cellIndex: null };
+            }
+          }
+          stepButton.classList.toggle("active", activePattern.pattern[cellIndex]);
           syncUi();
-          renderTrackSelector();
           renderEffectsMatrix();
           renderMixer();
           renderPattern(activeStep);
           drawWaveform();
           writeStoredSession();
-          return;
+        });
+        lane.append(stepButton);
+      }
+
+      if (usesSplitLanes) {
+        for (let placeholderCount = laneEnd - laneStart; placeholderCount < cellsPerLane; placeholderCount += 1) {
+          const filler = document.createElement("div");
+          filler.className = "step-placeholder";
+          lane.append(filler);
         }
-        if (!event.shiftKey && state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex) {
-          state.pitchStepSelection = { trackIndex: null, cellIndex: null };
-        }
-        activePattern.pattern[cellIndex] = !activePattern.pattern[cellIndex];
-        if (activePattern.pattern[cellIndex]) {
-          assignPitchFillToStep(track, cellIndex);
-        } else {
-          activePattern.stepPitches[cellIndex] = null;
-          if (state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex) {
-            state.pitchStepSelection = { trackIndex: null, cellIndex: null };
-          }
-        }
-        stepButton.classList.toggle("active", activePattern.pattern[cellIndex]);
-        syncUi();
-        renderEffectsMatrix();
-        renderMixer();
-        renderPattern(activeStep);
-        drawWaveform();
-        writeStoredSession();
-      });
-      row.append(stepButton);
-    });
+      }
+
+      laneShell.append(lane);
+    }
+
+    row.append(laneShell);
 
     ui.patternGrid.append(row);
   });
@@ -3706,7 +3757,7 @@ function updateSelectedTrackPattern(patch) {
   const activePattern = getTrackPattern(track);
   activePattern.isDefined = true;
   Object.assign(activePattern, patch);
-  if ("stepCount" in patch || "playbackMode" in patch) resetTrackPlaybackState(state.selectedTrackIndex);
+  if ("stepCount" in patch || "playbackMode" in patch || "barCount" in patch) resetTrackPlaybackState(state.selectedTrackIndex);
   if ("stepFill" in patch) {
     activePattern.pattern = buildTrackFillPattern(track);
     applyTrackPitchFill(track);
@@ -3880,6 +3931,7 @@ ui.mode.addEventListener("change", () => updateSelectedVoice({ mode: ui.mode.val
 ui.grainLocation.addEventListener("change", () => updateSelectedVoice({ grainLocation: ui.grainLocation.value }));
 ui.voicePlacement.addEventListener("input", () => updateSelectedVoice({ voicePlacement: Number(ui.voicePlacement.value) }));
 ui.voicePlaybackMode.addEventListener("change", () => updateSelectedVoice({ voicePlaybackMode: ui.voicePlaybackMode.value }));
+ui.trackBars.addEventListener("input", () => updateSelectedTrackPattern({ barCount: Number(ui.trackBars.value) }));
 ui.trackSteps.addEventListener("input", () => updateSelectedTrackPattern({ stepCount: Number(ui.trackSteps.value) }));
 ui.trackPlaybackMode.addEventListener("change", () => updateSelectedTrackPattern({ playbackMode: ui.trackPlaybackMode.value }));
 ui.trackStepProbability.addEventListener("input", () => updateSelectedTrackPattern({ stepProbability: Number(ui.trackStepProbability.value) }));
