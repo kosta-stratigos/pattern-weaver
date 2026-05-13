@@ -3579,7 +3579,7 @@ function renderPattern(activeStep = state.currentTransportStep) {
     const label = document.createElement("button");
     label.className = `pattern-row-label${trackIndex === state.selectedTrackIndex ? " active" : ""}`;
     applyTrackColor(label, track.color);
-    label.innerHTML = `<span class="pattern-row-name">${formatTrackName(track, trackIndex)}</span>`;
+    label.innerHTML = `<span class="pattern-row-name">T${track.id}</span>`;
     label.addEventListener("click", () => {
       openTrackSettingsOverlay(trackIndex);
     });
@@ -3593,7 +3593,7 @@ function renderPattern(activeStep = state.currentTransportStep) {
     for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
       const lane = document.createElement("div");
       lane.className = "pattern-step-lane";
-      lane.style.gridTemplateColumns = `repeat(${cellsPerLane}, minmax(29px, 1fr))`;
+      lane.style.gridTemplateColumns = `repeat(${cellsPerLane}, minmax(27px, 1fr))`;
       const laneStart = laneIndex * cellsPerLane;
       const laneEnd = Math.min(totalVisibleSlots, laneStart + cellsPerLane);
 

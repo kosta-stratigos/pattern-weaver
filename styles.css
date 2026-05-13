@@ -1294,7 +1294,7 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-row {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
+  grid-template-columns: 68px minmax(0, 1fr);
   gap: 6px;
   align-items: stretch;
   min-width: max-content;
@@ -1304,7 +1304,7 @@ input[type="range"]::-moz-range-thumb {
   display: grid;
   min-height: 46px;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 6px;
   border-radius: var(--pane-radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
@@ -1317,7 +1317,7 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-row-name {
   color: var(--text);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 600;
   font-family: var(--font-display);
   letter-spacing: 0.04em;
@@ -1403,7 +1403,7 @@ input[type="range"]::-moz-range-thumb {
 
 .step.compact {
   min-height: 20px;
-  font-size: 0.68rem;
+  font-size: 0.64rem;
 }
 
 .step-placeholder {
