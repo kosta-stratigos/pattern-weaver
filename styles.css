@@ -49,7 +49,7 @@ select {
 }
 
 .app-shell {
-  width: min(2000px, calc(100vw - 20px));
+  width: min(2120px, calc(100vw - 16px));
   margin: 0 auto;
   padding: 10px 0 22px;
 }
