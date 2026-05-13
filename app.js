@@ -3593,7 +3593,7 @@ function renderPattern(activeStep = state.currentTransportStep) {
     for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
       const lane = document.createElement("div");
       lane.className = "pattern-step-lane";
-      lane.style.gridTemplateColumns = `repeat(${cellsPerLane}, minmax(32px, 1fr))`;
+      lane.style.gridTemplateColumns = `repeat(${cellsPerLane}, minmax(29px, 1fr))`;
       const laneStart = laneIndex * cellsPerLane;
       const laneEnd = Math.min(totalVisibleSlots, laneStart + cellsPerLane);
 

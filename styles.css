@@ -49,7 +49,7 @@ select {
 }
 
 .app-shell {
-  width: min(1820px, calc(100vw - 24px));
+  width: min(2000px, calc(100vw - 20px));
   margin: 0 auto;
   padding: 10px 0 22px;
 }
@@ -1285,7 +1285,7 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-grid {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   overflow-x: auto;
   overflow-y: visible;
   padding-top: 4px;
@@ -1294,8 +1294,8 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-row {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 6px;
   align-items: stretch;
   min-width: max-content;
 }
@@ -1304,7 +1304,7 @@ input[type="range"]::-moz-range-thumb {
   display: grid;
   min-height: 46px;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: var(--pane-radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
@@ -1332,7 +1332,7 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-step-lane {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: max-content;
 }
 
@@ -1402,12 +1402,12 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .step.compact {
-  min-height: 21px;
+  min-height: 20px;
   font-size: 0.68rem;
 }
 
 .step-placeholder {
-  min-height: 21px;
+  min-height: 20px;
   border-radius: var(--pane-radius);
   border: 1px solid rgba(255, 255, 255, 0.04);
   background: rgba(255, 255, 255, 0.015);
