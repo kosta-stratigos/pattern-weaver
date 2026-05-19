@@ -19,6 +19,9 @@ const ui = {
   sampleSettingsGroup: document.querySelector("#sample-settings-group"),
   voicePlaybackSettingsGroup: document.querySelector("#voice-playback-settings-group"),
   synthSettingsGroup: document.querySelector("#synth-settings-group"),
+  workspaceTitle: document.querySelector("#workspace-title"),
+  workspaceTabs: Array.from(document.querySelectorAll("[data-workspace-tab]")),
+  workspacePanels: Array.from(document.querySelectorAll("[data-workspace-panel]")),
   pitchLanes: document.querySelector("#pitch-lanes"),
   trackSettingsOverlay: document.querySelector("#track-settings-overlay"),
   trackSettingsGroup: document.querySelector("#track-settings-group"),
@@ -1250,6 +1253,7 @@ const state = {
   steps: BASE_GRID_STEPS,
   selectedTrackIndex: 0,
   selectedVoiceIndex: 0,
+  workspaceTab: "voices",
   tracks: Array.from({ length: TRACK_COUNT }, (_, index) => createTrack(index + 1)),
   voices: Array.from({ length: TRACK_COUNT }, (_, index) => createVoiceConfig(index + 1)),
   trackPlaybackState: Array.from({ length: TRACK_COUNT }, (_, index) => createTrackPlaybackState(createTrack(index + 1))),
@@ -1471,6 +1475,7 @@ function writeStoredSession() {
     steps: state.steps,
     selectedTrackIndex: state.selectedTrackIndex,
     selectedVoiceIndex: state.selectedVoiceIndex,
+    workspaceTab: state.workspaceTab,
     mixVolume: state.mixVolume,
     sample: {
       regionStart: state.sample.regionStart,
@@ -1553,6 +1558,9 @@ function applyStoredSession() {
   state.selectedVoiceIndex = Number.isFinite(stored.selectedVoiceIndex)
     ? Math.max(0, Math.min(TRACK_COUNT - 1, stored.selectedVoiceIndex))
     : 0;
+  state.workspaceTab = ["voices", "track-effects", "pattern-switcher", "composer"].includes(stored.workspaceTab)
+    ? stored.workspaceTab
+    : state.workspaceTab;
   state.mixVolume = Number.isFinite(stored.mixVolume) ? Math.max(0, Math.min(1, stored.mixVolume)) : state.mixVolume;
 
   if (stored.sample) {
@@ -2398,6 +2406,27 @@ function formatFilterFrequency(value) {
 
 function formatFilterQ(value) {
   return clampFilterQ(value).toFixed(1);
+}
+
+function formatWorkspaceTitle(tabKey = "voices") {
+  if (tabKey === "track-effects") return "Track Effects";
+  if (tabKey === "pattern-switcher") return "Pattern Switcher";
+  if (tabKey === "composer") return "Composer";
+  return "Voices";
+}
+
+function syncWorkspaceTabs() {
+  if (ui.workspaceTitle) ui.workspaceTitle.textContent = formatWorkspaceTitle(state.workspaceTab);
+  ui.workspaceTabs.forEach((button) => {
+    const isActive = button.dataset.workspaceTab === state.workspaceTab;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+  });
+  ui.workspacePanels.forEach((panel) => {
+    const isActive = panel.dataset.workspacePanel === state.workspaceTab;
+    panel.classList.toggle("is-active", isActive);
+    panel.classList.toggle("ui-hidden", !isActive);
+  });
 }
 
 function getTrackBarCount(track) {
@@ -3727,6 +3756,7 @@ function syncUi() {
   ui.mixVolumeValue.textContent = `${Math.round(state.mixVolume * 100)}%`;
   renderPitchLanes();
   renderSequencePatternSwitcher();
+  syncWorkspaceTabs();
   syncTransportButton();
   syncTrackSettingsOverlay();
   syncFilterOverlay();
@@ -3980,6 +4010,15 @@ ui.patternVoiceSelect.addEventListener("change", () => {
 });
 ui.trackPatternSelect.addEventListener("change", () => {
   activateTrackPattern(state.selectedTrackIndex, Number(ui.trackPatternSelect.value), { markDefined: true });
+});
+ui.workspaceTabs.forEach((button) => {
+  button.addEventListener("click", () => {
+    const nextTab = button.dataset.workspaceTab;
+    if (!nextTab || nextTab === state.workspaceTab) return;
+    state.workspaceTab = nextTab;
+    syncWorkspaceTabs();
+    writeStoredSession();
+  });
 });
 ui.trackStepFillType.addEventListener("change", () => {
   const nextType = ui.trackStepFillType.value;

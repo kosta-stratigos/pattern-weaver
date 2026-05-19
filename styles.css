@@ -153,7 +153,7 @@ button.primary,
 .layout {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-template-rows: repeat(4, minmax(180px, auto));
+  grid-template-rows: minmax(162px, auto) minmax(180px, auto) minmax(180px, auto) minmax(180px, auto);
   gap: 12px;
   align-items: stretch;
 }
@@ -187,24 +187,9 @@ button.primary,
   grid-row: 2;
 }
 
-.pane-track-effects {
-  grid-column: 1;
+.pane-workspace {
+  grid-column: 1 / span 6;
   grid-row: 3 / span 2;
-}
-
-.pane-voices {
-  grid-column: 2 / span 3;
-  grid-row: 3 / span 2;
-}
-
-.pane-composer {
-  grid-column: 5 / span 2;
-  grid-row: 3;
-}
-
-.pane-sequence-patterns {
-  grid-column: 5 / span 2;
-  grid-row: 4;
 }
 
 .legacy-sample-shell {
@@ -320,8 +305,8 @@ h2 {
 
 .pitch-lanes {
   gap: 5px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
 .pitch-lane {
@@ -332,10 +317,10 @@ h2 {
 }
 
 .pitch-lane-label {
-  min-height: 46px;
+  min-height: 40px;
   display: grid;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 9px;
   border-radius: var(--pane-radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
@@ -357,8 +342,8 @@ h2 {
   display: grid;
   grid-template-columns: repeat(60, minmax(10px, 1fr));
   gap: 1px;
-  min-height: 54px;
-  padding: 6px;
+  min-height: 40px;
+  padding: 4px;
   border-radius: var(--pane-radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
@@ -370,7 +355,7 @@ h2 {
 .pitch-key {
   appearance: none;
   position: relative;
-  min-height: 42px;
+  min-height: 30px;
   padding: 0;
   border-radius: 2px;
   border: 1px solid rgba(212, 235, 225, 0.16);
@@ -379,7 +364,7 @@ h2 {
 }
 
 .pitch-key.is-black {
-  min-height: 28px;
+  min-height: 20px;
   width: 68%;
   justify-self: center;
   z-index: 2;
@@ -514,7 +499,7 @@ h2 {
 .mixer-meter {
   position: relative;
   width: 24px;
-  height: 112px;
+  height: 100px;
   margin-bottom: 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0;
@@ -1053,6 +1038,49 @@ input[type="range"]::-moz-range-thumb {
   padding: 0;
 }
 
+.workspace-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.workspace-tab {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: var(--pane-radius);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.workspace-tab.active {
+  border-color: rgba(79, 196, 184, 0.42);
+  background: linear-gradient(135deg, rgba(79, 196, 184, 0.18), rgba(111, 169, 255, 0.1));
+}
+
+.workspace-panels {
+  min-height: 0;
+}
+
+.workspace-panel {
+  display: none;
+  min-height: 0;
+}
+
+.workspace-panel.is-active {
+  display: block;
+}
+
+.workspace-panel-track-effects .effects-matrix,
+.workspace-panel-pattern-switcher .effects-matrix {
+  height: auto;
+}
+
+.workspace-panel-composer .placeholder-panel {
+  min-height: 320px;
+}
+
 .overlay-shell {
   position: fixed;
   inset: 0;
@@ -1512,10 +1540,7 @@ input[type="range"]::-moz-range-thumb {
   .pane-mix,
   .pane-clock,
   .pane-sequence,
-  .pane-sequence-patterns,
-  .pane-track-effects,
-  .pane-voices,
-  .pane-composer {
+  .pane-workspace {
     grid-column: auto;
     grid-row: auto;
   }
