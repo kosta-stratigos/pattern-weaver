@@ -1101,6 +1101,16 @@ input[type="range"]::-moz-range-thumb {
   min-height: 320px;
 }
 
+.add-pattern-panel {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.pattern-switcher-add {
+  font-size: 1.2rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
 .overlay-shell {
   position: fixed;
   inset: 0;

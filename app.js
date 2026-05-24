@@ -26,6 +26,12 @@ const ui = {
   trackSettingsGroup: document.querySelector("#track-settings-group"),
   trackSettingsTrack: document.querySelector("#track-settings-track"),
   trackSettingsClose: document.querySelector("#track-settings-close"),
+  addPatternOverlay: document.querySelector("#add-pattern-overlay"),
+  addPatternTitle: document.querySelector("#add-pattern-title"),
+  addPatternClose: document.querySelector("#add-pattern-close"),
+  addPatternSourceSelect: document.querySelector("#add-pattern-source-select"),
+  addPatternCopyAction: document.querySelector("#add-pattern-copy-action"),
+  addPatternCreateAction: document.querySelector("#add-pattern-create-action"),
   trackPatternSelect: document.querySelector("#track-pattern-select"),
   patternVoiceSelect: document.querySelector("#pattern-voice-select"),
   mode: document.querySelector("#mode"),
@@ -1299,6 +1305,11 @@ const state = {
   trackSettingsOverlay: {
     open: false,
     trackIndex: 0,
+  },
+  addPatternOverlay: {
+    open: false,
+    trackIndex: 0,
+    patternIndex: 0,
   },
   pitchStepSelection: {
     trackIndex: null,
@@ -2705,6 +2716,45 @@ function syncTrackSettingsOverlay() {
   }
 }
 
+function syncAddPatternOverlay() {
+  if (!ui.addPatternOverlay) return;
+  const isOpen = state.addPatternOverlay.open;
+  ui.addPatternOverlay.classList.toggle("is-hidden", !isOpen);
+  ui.addPatternOverlay.setAttribute("aria-hidden", String(!isOpen));
+  if (!isOpen) return;
+
+  const track = state.tracks[state.addPatternOverlay.trackIndex] ?? getSelectedTrack();
+  const targetPatternIndex = Math.max(0, Math.min(TRACK_PATTERN_COUNT - 1, state.addPatternOverlay.patternIndex ?? 0));
+  if (ui.addPatternTitle) {
+    ui.addPatternTitle.textContent = `Add Pattern ${targetPatternIndex + 1}, Track ${track.id}`;
+  }
+  if (!(ui.addPatternSourceSelect instanceof HTMLSelectElement)) return;
+
+  const currentValue = ui.addPatternSourceSelect.value;
+  ui.addPatternSourceSelect.innerHTML = "";
+  const definedPatterns = track.patterns
+    .map((pattern, index) => ({ pattern, index }))
+    .filter(({ pattern }) => pattern.isDefined);
+
+  definedPatterns.forEach(({ pattern, index }) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `P${index + 1}`;
+    if (pattern.name && pattern.name !== `Pattern ${index + 1}`) {
+      option.textContent += ` • ${pattern.name}`;
+    }
+    ui.addPatternSourceSelect.append(option);
+  });
+
+  const fallbackValue = definedPatterns.some(({ index }) => index === 0)
+    ? "0"
+    : String(definedPatterns[0]?.index ?? 0);
+  ui.addPatternSourceSelect.value = definedPatterns.some(({ index }) => String(index) === currentValue) ? currentValue : fallbackValue;
+  if (ui.addPatternCopyAction instanceof HTMLButtonElement) {
+    ui.addPatternCopyAction.disabled = definedPatterns.length === 0;
+  }
+}
+
 function openTrackSettingsOverlay(trackIndex) {
   state.selectedTrackIndex = trackIndex;
   state.filterOverlay.open = false;
@@ -2727,6 +2777,51 @@ function openTrackSettingsOverlay(trackIndex) {
 function closeTrackSettingsOverlay() {
   state.trackSettingsOverlay.open = false;
   syncTrackSettingsOverlay();
+}
+
+function openAddPatternOverlay(trackIndex, patternIndex) {
+  state.selectedTrackIndex = trackIndex;
+  state.filterOverlay.open = false;
+  state.delayOverlay.open = false;
+  state.driftOverlay.open = false;
+  state.swellOverlay.open = false;
+  state.trackSettingsOverlay.open = false;
+  state.addPatternOverlay = {
+    open: true,
+    trackIndex,
+    patternIndex,
+  };
+  syncUi();
+  renderTrackSelector();
+  renderEffectsMatrix();
+  renderSequencePatternSwitcher();
+  renderMixer();
+  renderPattern();
+  renderPitchLanes();
+  drawWaveform();
+  writeStoredSession();
+}
+
+function closeAddPatternOverlay() {
+  state.addPatternOverlay.open = false;
+  syncAddPatternOverlay();
+}
+
+function createDefaultPatternForTrack(trackIndex, patternIndex) {
+  const track = state.tracks[trackIndex];
+  return createTrackPattern(patternIndex + 1, patternIndex + track.id - 1);
+}
+
+function cloneTrackPatternIntoSlot(trackIndex, sourcePatternIndex, targetPatternIndex) {
+  const track = state.tracks[trackIndex];
+  if (!track) return;
+  const sourcePattern = getTrackPattern(track, sourcePatternIndex);
+  const fallbackPattern = createDefaultPatternForTrack(trackIndex, targetPatternIndex);
+  const clonedPattern = normalizeTrackPattern(targetPatternIndex, sourcePattern, fallbackPattern);
+  clonedPattern.id = targetPatternIndex + 1;
+  clonedPattern.name = `Pattern ${targetPatternIndex + 1}`;
+  clonedPattern.isDefined = true;
+  track.patterns[targetPatternIndex] = clonedPattern;
 }
 
 function buildTrackFillPattern(track) {
@@ -3571,13 +3666,17 @@ function renderSequencePatternSwitcher() {
     track.patterns.forEach((pattern, patternIndex) => {
       const button = document.createElement("button");
       const isActive = track.activePatternIndex === patternIndex;
-      button.className = `effects-cell effects-toggle pattern-switcher-button${isActive ? " active" : ""}${trackIndex === state.selectedTrackIndex ? " selected" : ""}`;
-      button.textContent = pattern.isDefined ? (isActive ? "Active" : "Ready") : "—";
-      button.disabled = !pattern.isDefined;
-      button.title = `${track.name} ${pattern.name}${pattern.isDefined ? "" : " unavailable"}`;
+      const isEmpty = !pattern.isDefined;
+      button.className = `effects-cell effects-toggle pattern-switcher-button${isActive ? " active" : ""}${trackIndex === state.selectedTrackIndex ? " selected" : ""}${isEmpty ? " pattern-switcher-add" : ""}`;
+      button.textContent = isEmpty ? "+" : (isActive ? "Active" : "Ready");
+      button.disabled = false;
+      button.title = isEmpty ? `Add Pattern ${patternIndex + 1} for ${track.name}` : `${track.name} ${pattern.name}`;
       applyTrackColor(button, track.color);
       button.addEventListener("click", () => {
-        if (!pattern.isDefined) return;
+        if (isEmpty) {
+          openAddPatternOverlay(trackIndex, patternIndex);
+          return;
+        }
         activateTrackPattern(trackIndex, patternIndex, { selectTrack: true });
       });
       row.append(button);
@@ -3750,6 +3849,7 @@ function syncUi() {
   syncWorkspaceTabs();
   syncTransportButton();
   syncTrackSettingsOverlay();
+  syncAddPatternOverlay();
   syncFilterOverlay();
   syncDelayOverlay();
   syncDriftOverlay();
@@ -4066,6 +4166,30 @@ ui.trackSettingsOverlay.addEventListener("click", (event) => {
   if (!(event.target instanceof HTMLElement)) return;
   if (event.target.dataset.trackSettingsOverlayClose === "true") closeTrackSettingsOverlay();
 });
+ui.addPatternClose.addEventListener("click", () => closeAddPatternOverlay());
+ui.addPatternOverlay.addEventListener("click", (event) => {
+  if (!(event.target instanceof HTMLElement)) return;
+  if (event.target.dataset.addPatternOverlayClose === "true") closeAddPatternOverlay();
+});
+ui.addPatternCopyAction.addEventListener("click", () => {
+  const trackIndex = state.addPatternOverlay.trackIndex;
+  const targetPatternIndex = state.addPatternOverlay.patternIndex;
+  const sourcePatternIndex = Number(ui.addPatternSourceSelect.value);
+  cloneTrackPatternIntoSlot(trackIndex, sourcePatternIndex, targetPatternIndex);
+  closeAddPatternOverlay();
+  activateTrackPattern(trackIndex, targetPatternIndex, { selectTrack: true });
+});
+ui.addPatternCreateAction.addEventListener("click", () => {
+  const trackIndex = state.addPatternOverlay.trackIndex;
+  const targetPatternIndex = state.addPatternOverlay.patternIndex;
+  const track = state.tracks[trackIndex];
+  const defaultPattern = createDefaultPatternForTrack(trackIndex, targetPatternIndex);
+  defaultPattern.isDefined = true;
+  track.patterns[targetPatternIndex] = defaultPattern;
+  closeAddPatternOverlay();
+  activateTrackPattern(trackIndex, targetPatternIndex, { selectTrack: true });
+  openTrackSettingsOverlay(trackIndex);
+});
 ui.bpm.addEventListener("input", () => {
   state.bpm = Number(ui.bpm.value);
   syncUi();
@@ -4235,6 +4359,10 @@ ui.transportToggle.addEventListener("click", async () => {
 window.addEventListener("keydown", async (event) => {
   if (event.key === "Escape" && state.trackSettingsOverlay.open) {
     closeTrackSettingsOverlay();
+    return;
+  }
+  if (event.key === "Escape" && state.addPatternOverlay.open) {
+    closeAddPatternOverlay();
     return;
   }
   if (event.key === "Escape" && state.filterOverlay.open) {
