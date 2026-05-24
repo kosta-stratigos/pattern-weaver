@@ -3542,7 +3542,7 @@ function updateCurrentStep(activeStep = -1) {
     button.classList.toggle("current", cellIndex === currentIndex);
   });
   updatePitchPlaybackHighlights();
-  renderComposerGrid();
+  updateComposerGridState();
 }
 
 function renderTrackSelector() {
@@ -3898,9 +3898,13 @@ function renderComposerGrid() {
 
   const headerRow = document.createElement("div");
   headerRow.className = "effects-matrix-row effects-matrix-header composer-matrix-header";
+  const spacerCell = document.createElement("div");
+  spacerCell.className = "effects-axis-label composer-header-spacer";
+  headerRow.append(spacerCell);
   for (let slotIndex = 0; slotIndex < COMPOSER_SLOT_COUNT; slotIndex += 1) {
     const headerCell = document.createElement("div");
-    headerCell.className = `effects-axis-label effects-track-head composer-slot-head${state.composer.currentSlotIndex === slotIndex && isComposerRunning() ? " active" : ""}`;
+    headerCell.className = "effects-axis-label effects-track-head composer-slot-head";
+    headerCell.dataset.composerSlotHead = String(slotIndex);
     headerCell.textContent = String(slotIndex + 1);
     headerRow.append(headerCell);
   }
@@ -3918,7 +3922,8 @@ function renderComposerGrid() {
 
     for (let slotIndex = 0; slotIndex < COMPOSER_SLOT_COUNT; slotIndex += 1) {
       const cell = document.createElement("div");
-      cell.className = `effects-cell composer-cell${state.composer.currentSlotIndex === slotIndex && isComposerRunning() ? " active" : ""}`;
+      cell.className = "effects-cell composer-cell";
+      cell.dataset.composerSlotCell = `${trackIndex}:${slotIndex}`;
       applyTrackColor(cell, track.color);
 
       const select = document.createElement("select");
@@ -3962,11 +3967,24 @@ function renderComposerGrid() {
     ui.composerGrid.append(row);
   });
 
+  updateComposerGridState();
+}
+
+function updateComposerGridState() {
+  const running = isComposerRunning();
+  ui.composerGrid?.querySelectorAll("[data-composer-slot-head]").forEach((cell) => {
+    const slotIndex = Number(cell.dataset.composerSlotHead);
+    cell.classList.toggle("active", running && slotIndex === state.composer.currentSlotIndex);
+  });
+  ui.composerGrid?.querySelectorAll("[data-composer-slot-cell]").forEach((cell) => {
+    const [trackIndexRaw, slotIndexRaw] = String(cell.dataset.composerSlotCell).split(":");
+    const slotIndex = Number(slotIndexRaw);
+    cell.classList.toggle("active", running && slotIndex === state.composer.currentSlotIndex);
+  });
   if (ui.composerToggle) {
     ui.composerToggle.textContent = state.composer.enabled ? "ON" : "OFF";
     ui.composerToggle.classList.toggle("active", state.composer.enabled);
   }
-
   if (ui.composerLoopToggle) {
     ui.composerLoopToggle.textContent = state.composer.loop ? "↻" : ">|";
     ui.composerLoopToggle.title = state.composer.loop ? "Loop composition" : "Play composition once";
