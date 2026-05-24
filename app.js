@@ -3530,23 +3530,10 @@ function renderEffectsMatrix() {
 
   const headerRow = document.createElement("div");
   headerRow.className = "effects-matrix-row effects-matrix-header";
-
-  state.tracks.forEach((track, index) => {
-    const headerCell = document.createElement("div");
-    headerCell.className = `effects-axis-label effects-track-head${index === state.selectedTrackIndex ? " active" : ""}`;
-    headerCell.textContent = `T${track.id}`;
-    applyTrackColor(headerCell, track.color);
-    headerRow.append(headerCell);
-  });
-  ui.effectsMatrix.append(headerRow);
-
   EFFECT_KEYS.forEach((effectKey) => {
-    const row = document.createElement("div");
-    row.className = "effects-matrix-row effects-row";
-
-    const labelCell = document.createElement("div");
-    labelCell.className = "effects-axis-label effects-row-label";
-    labelCell.textContent =
+    const headerCell = document.createElement("div");
+    headerCell.className = "effects-axis-label effects-track-head";
+    headerCell.textContent =
       effectKey === "filter"
         ? "Filter"
         : effectKey === "delay"
@@ -3556,9 +3543,22 @@ function renderEffectsMatrix() {
             : effectKey === "swell"
               ? "Swell"
               : effectKey;
+    headerRow.append(headerCell);
+  });
+  ui.effectsMatrix.append(headerRow);
+
+  state.tracks.forEach((track, trackIndex) => {
+    const activePattern = getTrackPattern(track);
+    const row = document.createElement("div");
+    row.className = "effects-matrix-row effects-row";
+
+    const labelCell = document.createElement("div");
+    labelCell.className = `effects-axis-label effects-row-label${trackIndex === state.selectedTrackIndex ? " active" : ""}`;
+    labelCell.textContent = `T${track.id}:P${track.activePatternIndex + 1}`;
+    applyTrackColor(labelCell, track.color);
     row.append(labelCell);
 
-    state.tracks.forEach((track, trackIndex) => {
+    EFFECT_KEYS.forEach((effectKey) => {
       const effect = getTrackEffectContainer(track)[effectKey];
       const button = document.createElement("button");
       button.className = `effects-cell effects-toggle${effect.enabled ? " active" : ""}${trackIndex === state.selectedTrackIndex ? " selected" : ""}`;
@@ -3574,7 +3574,7 @@ function renderEffectsMatrix() {
                 : "On"
         )
         : "Off";
-      button.title = `${track.name} ${effectKey} ${effect.enabled ? "enabled" : "disabled"}`;
+      button.title = `${track.name} Pattern ${track.activePatternIndex + 1} ${effectKey} ${effect.enabled ? "enabled" : "disabled"}`;
 
       let holdTimer = null;
       let holdTriggered = false;

@@ -993,11 +993,11 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .effects-matrix-header {
-  margin-left: 58px;
+  margin-left: 78px;
 }
 
 .effects-row {
-  grid-template-columns: 58px repeat(4, minmax(0, 1fr));
+  grid-template-columns: 78px repeat(4, minmax(0, 1fr));
 }
 
 .pattern-switcher-matrix .effects-matrix-header {
@@ -1030,6 +1030,10 @@ input[type="range"]::-moz-range-thumb {
 .effects-row-label {
   justify-items: start;
   padding-left: 0;
+}
+
+.effects-row-label.active {
+  color: var(--text);
 }
 
 .effects-toggle {
