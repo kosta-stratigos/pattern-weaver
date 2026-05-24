@@ -1111,6 +1111,11 @@ input[type="range"]::-moz-range-thumb {
   gap: 8px;
 }
 
+.composer-matrix .effects-matrix-header {
+  margin-left: 0;
+  grid-template-columns: 72px repeat(16, minmax(0, 1fr));
+}
+
 .composer-matrix .effects-matrix-row {
   grid-template-columns: 72px repeat(16, minmax(0, 1fr));
 }
