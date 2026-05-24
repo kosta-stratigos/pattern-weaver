@@ -341,6 +341,7 @@ function createTrackPattern(id = 1, seedOffset = 0) {
     stepCount: 16,
     playbackMode: "forward",
     stepProbability: 100,
+    effects: createTrackEffects(),
     envelope: createDefaultTrackEnvelope(),
     stepFill: createDefaultStepFillSettings(),
     pitchFill: createDefaultPitchFillSettings(),
@@ -402,6 +403,7 @@ function normalizeTrackPattern(index, source = {}, fallback = createTrackPattern
       0,
       Math.min(100, Number.isFinite(Number(source.stepProbability)) ? Number(source.stepProbability) : fallback.stepProbability),
     ),
+    effects: createTrackEffects(source.effects ?? fallback.effects),
     envelope: normalizeTrackEnvelope(source.envelope ?? fallback.envelope, fallback.envelope),
     stepFill: normalizeStepFillSettings(source.stepFill ?? fallback.stepFill, fallback.stepFill),
     pitchFill: normalizePitchFillSettings(source.pitchFill ?? fallback.pitchFill, fallback.pitchFill),
@@ -761,10 +763,11 @@ class PlaybackLayer {
     delayWetGain.disconnect();
     feedbackGain.disconnect();
 
-    const filter = track.effects.filter;
-    const delay = track.effects.delay;
-    const drift = track.effects.drift;
-    const swell = track.effects.swell;
+    const effects = getTrackEffectContainer(track);
+    const filter = effects.filter;
+    const delay = effects.delay;
+    const drift = effects.drift;
+    const swell = effects.swell;
     const driftCenter = clampPan(track.pan);
     const driftAmplitude = drift.enabled ? clampModulationAmount(drift.amount, 35) / 100 : 0;
     const swellCenterValue = Math.max(0, Math.min(1, track.volume));
@@ -1215,7 +1218,6 @@ function createTrack(id) {
     solo: false,
     volume: 0.85,
     pan: 0,
-    effects: createTrackEffects(),
     patterns: Array.from({ length: TRACK_PATTERN_COUNT }, (_, index) => createTrackPattern(index + 1, index + id - 1)),
   };
 }
@@ -1324,6 +1326,12 @@ function getSelectedTrack() {
   return state.tracks[state.selectedTrackIndex];
 }
 
+function getTrackEffectContainer(trackOrIndex) {
+  const track = Number.isInteger(trackOrIndex) ? state.tracks[trackOrIndex] : trackOrIndex;
+  const activePattern = getTrackPattern(track);
+  return activePattern?.effects ?? createTrackEffects();
+}
+
 function getTrackPattern(track, patternIndex = track?.activePatternIndex ?? 0) {
   if (!track) return createTrackPattern(1);
   const safeIndex = Math.max(0, Math.min(TRACK_PATTERN_COUNT - 1, Number(patternIndex) || 0));
@@ -1415,6 +1423,14 @@ function normalizeTrack(index, source = {}) {
   const activePatternIndex = Number.isFinite(Number(source.activePatternIndex))
     ? Math.max(0, Math.min(TRACK_PATTERN_COUNT - 1, Number(source.activePatternIndex)))
     : 0;
+  const legacyEffects = {
+    effects: {
+      filter: source.effects?.filter ?? source.filter,
+      delay: source.effects?.delay ?? source.delay,
+      drift: source.effects?.drift ?? source.drift,
+      swell: source.effects?.swell ?? source.swell,
+    },
+  };
   const legacyPatternSource = {
     stepCount: source.stepCount,
     playbackMode: source.playbackMode,
@@ -1435,16 +1451,10 @@ function normalizeTrack(index, source = {}) {
     solo: Boolean(source.solo),
     volume: Math.max(0, Math.min(1, Number(source.volume) || fallback.volume)),
     pan: clampPan(source.pan ?? fallback.pan),
-    effects: {
-      filter: normalizeFilterSettings(source.effects?.filter ?? source.filter ?? fallback.effects.filter, fallback.effects.filter),
-      delay: normalizeDelaySettings(source.effects?.delay ?? source.delay ?? fallback.effects.delay, fallback.effects.delay),
-      drift: normalizeDriftSettings(source.effects?.drift ?? source.drift ?? fallback.effects.drift, fallback.effects.drift),
-      swell: normalizeSwellSettings(source.effects?.swell ?? source.swell ?? fallback.effects.swell, fallback.effects.swell),
-    },
     patterns: Array.from({ length: TRACK_PATTERN_COUNT }, (_, patternIndex) =>
       normalizeTrackPattern(
         patternIndex,
-        source.patterns?.[patternIndex] ?? (patternIndex === 0 ? legacyPatternSource : undefined),
+        source.patterns?.[patternIndex] ?? (patternIndex === 0 ? { ...legacyPatternSource, ...legacyEffects } : undefined),
         fallback.patterns[patternIndex],
       )),
   };
@@ -1525,12 +1535,6 @@ function writeStoredSession() {
       solo: track.solo,
       volume: track.volume,
       pan: track.pan,
-      effects: {
-        filter: { ...track.effects.filter },
-        delay: { ...track.effects.delay },
-        drift: { ...track.effects.drift },
-        swell: { ...track.effects.swell },
-      },
       patterns: track.patterns.map((pattern) => ({
         id: pattern.id,
         name: pattern.name,
@@ -1539,6 +1543,12 @@ function writeStoredSession() {
         stepCount: pattern.stepCount,
         playbackMode: pattern.playbackMode,
         stepProbability: pattern.stepProbability,
+        effects: {
+          filter: { ...pattern.effects.filter },
+          delay: { ...pattern.effects.delay },
+          drift: { ...pattern.effects.drift },
+          swell: { ...pattern.effects.swell },
+        },
         envelope: { ...pattern.envelope },
         stepFill: { ...pattern.stepFill },
         pitchFill: { ...pattern.pitchFill },
@@ -2563,23 +2573,19 @@ function applyTrackColor(element, color) {
 }
 
 function getTrackFilter(trackOrIndex) {
-  const track = Number.isInteger(trackOrIndex) ? state.tracks[trackOrIndex] : trackOrIndex;
-  return track?.effects?.filter ?? createDefaultFilterSettings();
+  return getTrackEffectContainer(trackOrIndex).filter ?? createDefaultFilterSettings();
 }
 
 function getTrackDelay(trackOrIndex) {
-  const track = Number.isInteger(trackOrIndex) ? state.tracks[trackOrIndex] : trackOrIndex;
-  return track?.effects?.delay ?? createDefaultDelaySettings();
+  return getTrackEffectContainer(trackOrIndex).delay ?? createDefaultDelaySettings();
 }
 
 function getTrackDrift(trackOrIndex) {
-  const track = Number.isInteger(trackOrIndex) ? state.tracks[trackOrIndex] : trackOrIndex;
-  return track?.effects?.drift ?? createDefaultDriftSettings();
+  return getTrackEffectContainer(trackOrIndex).drift ?? createDefaultDriftSettings();
 }
 
 function getTrackSwell(trackOrIndex) {
-  const track = Number.isInteger(trackOrIndex) ? state.tracks[trackOrIndex] : trackOrIndex;
-  return track?.effects?.swell ?? createDefaultSwellSettings();
+  return getTrackEffectContainer(trackOrIndex).swell ?? createDefaultSwellSettings();
 }
 
 function formatLfoRate(seconds) {
@@ -3553,7 +3559,7 @@ function renderEffectsMatrix() {
     row.append(labelCell);
 
     state.tracks.forEach((track, trackIndex) => {
-      const effect = track.effects[effectKey];
+      const effect = getTrackEffectContainer(track)[effectKey];
       const button = document.createElement("button");
       button.className = `effects-cell effects-toggle${effect.enabled ? " active" : ""}${trackIndex === state.selectedTrackIndex ? " selected" : ""}`;
       applyTrackColor(button, track.color);
@@ -3578,7 +3584,8 @@ function renderEffectsMatrix() {
           holdTriggered = false;
           return;
         }
-        track.effects[effectKey].enabled = !track.effects[effectKey].enabled;
+        const activePattern = getTrackPattern(track);
+        activePattern.effects[effectKey].enabled = !activePattern.effects[effectKey].enabled;
         state.playback?.updateTrackBus(trackIndex, track);
         syncUi();
         renderEffectsMatrix();
@@ -3626,6 +3633,7 @@ function activateTrackPattern(trackIndex, patternIndex, { selectTrack = false, m
   const activePattern = getTrackPattern(track);
   if (markDefined) activePattern.isDefined = true;
   syncTrackPlaybackStateForPatternSwitch(trackIndex);
+  state.playback?.updateTrackBus(trackIndex, track);
   if (state.pitchStepSelection.trackIndex === trackIndex) {
     state.pitchStepSelection = { trackIndex: null, cellIndex: null };
   }
@@ -3964,7 +3972,8 @@ function bindSynthNoiseMixKnob() {
 function updateTrackFilter(trackIndex, patch) {
   const track = state.tracks[trackIndex];
   if (!track) return;
-  track.effects.filter = normalizeFilterSettings({ ...track.effects.filter, ...patch }, track.effects.filter);
+  const activePattern = getTrackPattern(track);
+  activePattern.effects.filter = normalizeFilterSettings({ ...activePattern.effects.filter, ...patch }, activePattern.effects.filter);
   state.playback?.updateTrackBus(trackIndex, track);
   syncUi();
   renderEffectsMatrix();
@@ -3974,7 +3983,8 @@ function updateTrackFilter(trackIndex, patch) {
 function updateTrackDelay(trackIndex, patch) {
   const track = state.tracks[trackIndex];
   if (!track) return;
-  track.effects.delay = normalizeDelaySettings({ ...track.effects.delay, ...patch }, track.effects.delay);
+  const activePattern = getTrackPattern(track);
+  activePattern.effects.delay = normalizeDelaySettings({ ...activePattern.effects.delay, ...patch }, activePattern.effects.delay);
   state.playback?.updateTrackBus(trackIndex, track);
   syncUi();
   renderEffectsMatrix();
@@ -3984,7 +3994,8 @@ function updateTrackDelay(trackIndex, patch) {
 function updateTrackDrift(trackIndex, patch) {
   const track = state.tracks[trackIndex];
   if (!track) return;
-  track.effects.drift = normalizeDriftSettings({ ...track.effects.drift, ...patch }, track.effects.drift);
+  const activePattern = getTrackPattern(track);
+  activePattern.effects.drift = normalizeDriftSettings({ ...activePattern.effects.drift, ...patch }, activePattern.effects.drift);
   state.playback?.updateTrackBus(trackIndex, track);
   syncUi();
   renderEffectsMatrix();
@@ -3994,7 +4005,8 @@ function updateTrackDrift(trackIndex, patch) {
 function updateTrackSwell(trackIndex, patch) {
   const track = state.tracks[trackIndex];
   if (!track) return;
-  track.effects.swell = normalizeSwellSettings({ ...track.effects.swell, ...patch }, track.effects.swell);
+  const activePattern = getTrackPattern(track);
+  activePattern.effects.swell = normalizeSwellSettings({ ...activePattern.effects.swell, ...patch }, activePattern.effects.swell);
   state.playback?.updateTrackBus(trackIndex, track);
   syncUi();
   renderEffectsMatrix();
