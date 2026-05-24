@@ -107,6 +107,9 @@ const ui = {
   bpmValue: document.querySelector("#bpm-value"),
   swing: document.querySelector("#swing"),
   swingValue: document.querySelector("#swing-value"),
+  composerGrid: document.querySelector("#composer-grid"),
+  composerToggle: document.querySelector("#composer-toggle"),
+  composerLoopToggle: document.querySelector("#composer-loop-toggle"),
   trackSteps: document.querySelector("#track-steps"),
   trackStepsValue: document.querySelector("#track-steps-value"),
   trackBars: document.querySelector("#track-bars"),
@@ -155,6 +158,7 @@ const BASE_GRID_STEPS = BASE_GRID_STEPS_PER_BAR * MAX_PATTERN_BARS;
 const MAX_PATTERN_CELLS = STEPS_PER_BAR_MAX * MAX_PATTERN_BARS;
 const TRACK_COUNT = 4;
 const TRACK_PATTERN_COUNT = 8;
+const COMPOSER_SLOT_COUNT = 16;
 const PITCH_LANE_NOTE_COUNT = 60;
 const PITCH_LANE_START_MIDI = 24;
 const PITCH_LANE_REFERENCE_MIDI = 60;
@@ -329,6 +333,21 @@ function createDefaultTrackEnvelope() {
     decay: 80,
     sustain: 70,
     release: 120,
+  };
+}
+
+function createDefaultComposerSlots() {
+  return Array.from({ length: TRACK_COUNT }, () => Array.from({ length: COMPOSER_SLOT_COUNT }, () => "rest"));
+}
+
+function createDefaultComposerState() {
+  return {
+    enabled: false,
+    loop: true,
+    slots: createDefaultComposerSlots(),
+    currentSlotIndex: 0,
+    currentSlotStep: 0,
+    currentSlotLengthSteps: BASE_GRID_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT,
   };
 }
 
@@ -749,7 +768,7 @@ class PlaybackLayer {
     return bus;
   }
 
-  updateTrackBus(trackIndex, track = this.state.tracks[trackIndex]) {
+  updateTrackBus(trackIndex, track = this.state.tracks[trackIndex], effectPattern = getTrackBusPattern(track)) {
     const bus = this.trackBuses?.[trackIndex];
     if (!bus || !track) return;
     const { input, filterNode, dryGain, delaySend, delayNode, delayTone, delayWetGain, feedbackGain, outputGain, panNode, panCenter, panLfo, panLfoDepth, gainCenter, gainLfo, gainLfoDepth } = bus;
@@ -763,7 +782,7 @@ class PlaybackLayer {
     delayWetGain.disconnect();
     feedbackGain.disconnect();
 
-    const effects = getTrackEffectContainer(track);
+    const effects = effectPattern?.effects ?? getTrackEffectContainer(track);
     const filter = effects.filter;
     const delay = effects.delay;
     const drift = effects.drift;
@@ -1130,6 +1149,11 @@ class TransportLayer {
   start() {
     if (this.intervalId) return;
     this.currentStep = 0;
+    if (this.state.composer.enabled) {
+      initializeComposerPlayback({ resetSlotIndex: true });
+    } else {
+      syncAllTrackBuses();
+    }
     resetTrackPlaybackState();
     this.nextStepTime = this.audioContext.currentTime + 0.03;
     this.intervalId = window.setInterval(() => this.tick(), this.lookaheadMs);
@@ -1139,7 +1163,9 @@ class TransportLayer {
     window.clearInterval(this.intervalId);
     this.intervalId = null;
     this.currentStep = 0;
+    this.state.composer.currentSlotStep = 0;
     resetTrackPlaybackState();
+    if (!this.state.composer.enabled) syncAllTrackBuses();
     if (this.onStep) this.onStep(-1);
   }
 
@@ -1152,23 +1178,26 @@ class TransportLayer {
 
   scheduleStep(stepIndex, when) {
     this.state.tracks.forEach((track) => {
-      const activePattern = getTrackPattern(track);
-      if (!shouldAdvanceTrackStep(track, stepIndex)) return;
-      const cellIndex = resolveTrackPatternStep(track, { advance: true });
+      const playbackPattern = getTrackPlaybackPattern(track);
+      const patternForPlayback = playbackPattern ?? getTrackPattern(track);
+      const baseStep = this.state.composer.enabled ? this.state.composer.currentSlotStep : stepIndex;
+      if (!playbackPattern && this.state.composer.enabled) return;
+      if (!shouldAdvanceTrackStep(track, baseStep, patternForPlayback)) return;
+      const cellIndex = resolveTrackPatternStep(track, { advance: true, pattern: patternForPlayback });
       const playbackState = this.state.trackPlaybackState[track.id - 1];
       if (playbackState) {
         playbackState.lastTriggeredPatternIndex = -1;
         playbackState.lastTriggeredPitchMidi = null;
       }
-      if (!activePattern.pattern[cellIndex]) return;
-      if (Math.random() * 100 > activePattern.stepProbability) return;
+      if (!patternForPlayback.pattern[cellIndex]) return;
+      if (Math.random() * 100 > patternForPlayback.stepProbability) return;
       if (!isTrackAudible(track)) return;
       const sliceIndex = resolvePlaybackSliceIndex(track, { advance: true });
-      const noteDuration = getTrackTriggerDuration(track);
-      const randomEveryNotes = activePattern.pitchFill.type === "random-every" ? getTrackPitchFillNotes(track) : null;
+      const noteDuration = getTrackTriggerDuration(track, patternForPlayback);
+      const randomEveryNotes = patternForPlayback.pitchFill.type === "random-every" ? getTrackPitchFillNotes(track, patternForPlayback) : null;
       const pitchMidi = randomEveryNotes
         ? randomEveryNotes[Math.floor(Math.random() * randomEveryNotes.length)]
-        : getTrackStepPitchMidi(track, cellIndex);
+        : getTrackStepPitchMidi(track, cellIndex, patternForPlayback);
       const pitchSemitones = pitchMidi - PITCH_LANE_REFERENCE_MIDI;
       if (playbackState) {
         playbackState.lastTriggeredPatternIndex = cellIndex;
@@ -1187,6 +1216,18 @@ class TransportLayer {
     const isOffbeatSixteenth = sixteenthIndex % 2 === 1;
     const stepDuration = baseStepDuration * (isOffbeatSixteenth ? 1 - swingFactor : 1 + swingFactor);
     this.nextStepTime += stepDuration;
+    if (this.state.composer.enabled) {
+      this.state.composer.currentSlotStep += 1;
+      if (this.state.composer.currentSlotStep >= this.state.composer.currentSlotLengthSteps) {
+        const advanced = advanceComposerSlot();
+        if (!advanced) {
+          this.stop();
+          return;
+        }
+      }
+      this.currentStep = this.state.composer.currentSlotStep % BASE_GRID_STEPS;
+      return;
+    }
     this.currentStep = (this.currentStep + 1) % BASE_GRID_STEPS;
   }
 }
@@ -1320,6 +1361,7 @@ const state = {
   currentTransportStep: -1,
   currentSampleName: "",
   mixVolume: 0.9,
+  composer: createDefaultComposerState(),
 };
 
 function getSelectedTrack() {
@@ -1330,6 +1372,10 @@ function getTrackEffectContainer(trackOrIndex) {
   const track = Number.isInteger(trackOrIndex) ? state.tracks[trackOrIndex] : trackOrIndex;
   const activePattern = getTrackPattern(track);
   return activePattern?.effects ?? createTrackEffects();
+}
+
+function getTrackBusPattern(track) {
+  return getTrackPlaybackPattern(track) ?? getTrackPattern(track);
 }
 
 function getTrackPattern(track, patternIndex = track?.activePatternIndex ?? 0) {
@@ -1346,6 +1392,119 @@ function getSelectedVoice() {
   return state.voices[state.selectedVoiceIndex];
 }
 
+function normalizeComposerSlots(sourceSlots) {
+  return Array.from({ length: TRACK_COUNT }, (_, trackIndex) =>
+    Array.from({ length: COMPOSER_SLOT_COUNT }, (_, slotIndex) => {
+      const value = sourceSlots?.[trackIndex]?.[slotIndex];
+      if (value === "rest" || value == null || value === "") return "rest";
+      const parsed = Number(value);
+      return Number.isInteger(parsed) && parsed >= 0 && parsed < TRACK_PATTERN_COUNT ? parsed : "rest";
+    }));
+}
+
+function normalizeComposerState(source = {}) {
+  const fallback = createDefaultComposerState();
+  const slotIndex = Number.isFinite(Number(source.currentSlotIndex))
+    ? Math.max(0, Math.min(COMPOSER_SLOT_COUNT - 1, Number(source.currentSlotIndex)))
+    : fallback.currentSlotIndex;
+  const slotLengthSteps = Number.isFinite(Number(source.currentSlotLengthSteps))
+    ? Math.max(BASE_GRID_STEPS_PER_BAR, Math.min(BASE_GRID_STEPS, Number(source.currentSlotLengthSteps)))
+    : fallback.currentSlotLengthSteps;
+  const slotStep = Number.isFinite(Number(source.currentSlotStep))
+    ? Math.max(0, Math.min(slotLengthSteps - 1, Number(source.currentSlotStep)))
+    : fallback.currentSlotStep;
+  return {
+    enabled: Boolean(source.enabled),
+    loop: source.loop == null ? fallback.loop : Boolean(source.loop),
+    slots: normalizeComposerSlots(source.slots),
+    currentSlotIndex: slotIndex,
+    currentSlotStep: slotStep,
+    currentSlotLengthSteps: slotLengthSteps,
+  };
+}
+
+function getComposerAssignment(trackIndex, slotIndex = state.composer.currentSlotIndex) {
+  return state.composer.slots?.[trackIndex]?.[slotIndex] ?? "rest";
+}
+
+function getComposerAssignedPattern(trackOrIndex, slotIndex = state.composer.currentSlotIndex) {
+  const trackIndex = Number.isInteger(trackOrIndex) ? trackOrIndex : Math.max(0, (trackOrIndex?.id ?? 1) - 1);
+  const track = state.tracks[trackIndex];
+  if (!track) return null;
+  const assignment = getComposerAssignment(trackIndex, slotIndex);
+  if (assignment === "rest") return null;
+  const pattern = getTrackPattern(track, assignment);
+  return pattern?.isDefined ? pattern : null;
+}
+
+function getComposerSlotLengthSteps(slotIndex = state.composer.currentSlotIndex) {
+  let maxBars = 0;
+  state.tracks.forEach((track, trackIndex) => {
+    const pattern = getComposerAssignedPattern(trackIndex, slotIndex);
+    if (!pattern) return;
+    maxBars = Math.max(maxBars, Math.max(1, Math.min(MAX_PATTERN_BARS, pattern.barCount ?? DEFAULT_PATTERN_BAR_COUNT)));
+  });
+  return BASE_GRID_STEPS_PER_BAR * Math.max(1, maxBars || DEFAULT_PATTERN_BAR_COUNT);
+}
+
+function getTrackPlaybackPattern(track) {
+  if (!state.composer.enabled) return getTrackPattern(track);
+  return getComposerAssignedPattern(track) ?? null;
+}
+
+function isComposerRunning() {
+  return state.composer.enabled && isTransportRunning();
+}
+
+function syncComposerTrackBuses() {
+  if (!state.playback) return;
+  state.tracks.forEach((track, trackIndex) => {
+    const playbackPattern = getTrackPlaybackPattern(track);
+    if (!playbackPattern) return;
+    state.playback.updateTrackBus(trackIndex, track, playbackPattern);
+  });
+}
+
+function initializeComposerPlayback({ resetSlotIndex = true } = {}) {
+  if (resetSlotIndex) {
+    state.composer.currentSlotIndex = 0;
+    state.composer.currentSlotStep = 0;
+  }
+  state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(state.composer.currentSlotIndex);
+  resetTrackPlaybackState();
+  syncComposerTrackBuses();
+  renderComposerGrid();
+}
+
+function advanceComposerSlot() {
+  const nextSlotIndex = state.composer.currentSlotIndex + 1;
+  if (nextSlotIndex >= COMPOSER_SLOT_COUNT) {
+    if (!state.composer.loop) {
+      state.composer.enabled = false;
+      state.composer.currentSlotIndex = 0;
+      state.composer.currentSlotStep = 0;
+      state.composer.currentSlotLengthSteps = BASE_GRID_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT;
+      resetTrackPlaybackState();
+      syncAllTrackBuses();
+      renderComposerGrid();
+      syncUi();
+      writeStoredSession();
+      return false;
+    }
+    state.composer.currentSlotIndex = 0;
+  } else {
+    state.composer.currentSlotIndex = nextSlotIndex;
+  }
+  state.composer.currentSlotStep = 0;
+  state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(state.composer.currentSlotIndex);
+  resetTrackPlaybackState();
+  syncComposerTrackBuses();
+  renderComposerGrid();
+  syncUi();
+  writeStoredSession();
+  return true;
+}
+
 function trackUsesSample(track) {
   return getTrackVoice(track).mode !== "synth";
 }
@@ -1354,9 +1513,9 @@ function hasAnySampleBasedTracks() {
   return state.tracks.some((track) => trackUsesSample(track));
 }
 
-function createTrackPlaybackState(track = createTrack(1)) {
-  const visibleCellCount = getTrackVisibleCellCount(track);
-  const activePattern = getTrackPattern(track);
+function createTrackPlaybackState(track = createTrack(1), pattern = getTrackPattern(track)) {
+  const visibleCellCount = getTrackVisibleCellCount(track, pattern);
+  const activePattern = pattern ?? getTrackPattern(track);
   return {
     sequentialIndex: 0,
     sweepIndex: 0,
@@ -1386,12 +1545,13 @@ function readStoredSession() {
 
 function resetTrackPlaybackState(trackIndex = null) {
   if (Number.isInteger(trackIndex)) {
-    state.trackPlaybackState[trackIndex] = createTrackPlaybackState(state.tracks[trackIndex]);
+    const track = state.tracks[trackIndex];
+    state.trackPlaybackState[trackIndex] = createTrackPlaybackState(track, getTrackPlaybackPattern(track) ?? getTrackPattern(track));
     drawWaveformOverview();
     return;
   }
 
-  state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track));
+  state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track, getTrackPlaybackPattern(track) ?? getTrackPattern(track)));
 }
 
 function syncTrackPlaybackStateForPatternSwitch(trackIndex) {
@@ -1497,6 +1657,11 @@ function writeStoredSession() {
     selectedVoiceIndex: state.selectedVoiceIndex,
     workspaceTab: state.workspaceTab,
     mixVolume: state.mixVolume,
+    composer: {
+      enabled: state.composer.enabled,
+      loop: state.composer.loop,
+      slots: state.composer.slots.map((row) => row.slice(0, COMPOSER_SLOT_COUNT)),
+    },
     sample: {
       regionStart: state.sample.regionStart,
       regionEnd: state.sample.regionEnd,
@@ -1582,6 +1747,7 @@ function applyStoredSession() {
     ? stored.workspaceTab
     : state.workspaceTab;
   state.mixVolume = Number.isFinite(stored.mixVolume) ? Math.max(0, Math.min(1, stored.mixVolume)) : state.mixVolume;
+  state.composer = normalizeComposerState(stored.composer);
 
   if (stored.sample) {
     state.sample.setRegion(
@@ -1908,15 +2074,15 @@ function getTrackPitchMidi(track) {
   return PITCH_LANE_REFERENCE_MIDI + voice.pitch;
 }
 
-function getTrackStepPitchMidi(track, cellIndex = null) {
-  const activePattern = getTrackPattern(track);
+function getTrackStepPitchMidi(track, cellIndex = null, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
   if (!Number.isInteger(cellIndex) || cellIndex < 0) return getTrackPitchMidi(track);
   const stepPitch = activePattern.stepPitches?.[cellIndex];
   return stepPitch == null ? getTrackPitchMidi(track) : clampMidiNote(stepPitch, getTrackPitchMidi(track));
 }
 
-function getAssignedTrackStepPitchMidi(track, cellIndex = null) {
-  const activePattern = getTrackPattern(track);
+function getAssignedTrackStepPitchMidi(track, cellIndex = null, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
   if (!Number.isInteger(cellIndex) || cellIndex < 0) return null;
   const stepPitch = activePattern.stepPitches?.[cellIndex];
   return stepPitch == null ? null : clampMidiNote(stepPitch, PITCH_LANE_REFERENCE_MIDI);
@@ -1932,8 +2098,8 @@ function getScaleNotesInRange(track, fromMidi, toMidi) {
   return notes;
 }
 
-function getTrackPitchFillNotes(track) {
-  const fill = getTrackPattern(track).pitchFill;
+function getTrackPitchFillNotes(track, pattern = getTrackPattern(track)) {
+  const fill = (pattern ?? getTrackPattern(track)).pitchFill;
   const fillNotes = getScaleNotesInRange(track, fill.from, fill.type === "single" ? fill.from : fill.to);
   return fillNotes.length ? fillNotes : [quantizeMidiToTrackScale(track, fill.from)];
 }
@@ -2246,7 +2412,7 @@ function getTrackVoice(track) {
 
 function getTrackPlaybackSettings(track) {
   const voice = getTrackVoice(track);
-  const activePattern = getTrackPattern(track);
+  const activePattern = getTrackPlaybackPattern(track) ?? getTrackPattern(track);
   return {
     ...track,
     patternId: activePattern.id,
@@ -2441,43 +2607,44 @@ function syncWorkspaceTabs() {
   });
 }
 
-function getTrackBarCount(track) {
-  const activePattern = getTrackPattern(track);
+function getTrackBarCount(track, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
   return Math.max(1, Math.min(MAX_PATTERN_BARS, activePattern.barCount ?? DEFAULT_PATTERN_BAR_COUNT));
 }
 
-function getTrackVisibleCellCount(track) {
-  const activePattern = getTrackPattern(track);
+function getTrackVisibleCellCount(track, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
   const stepsPerBar = Math.max(1, Math.min(STEPS_PER_BAR_MAX, activePattern.stepCount ?? 16));
-  return Math.max(1, Math.min(MAX_PATTERN_CELLS, stepsPerBar * getTrackBarCount(track)));
+  return Math.max(1, Math.min(MAX_PATTERN_CELLS, stepsPerBar * getTrackBarCount(track, activePattern)));
 }
 
-function getTrackTriggerDuration(track) {
-  const activePattern = getTrackPattern(track);
+function getTrackTriggerDuration(track, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
   const stepsPerBar = Math.max(1, Math.min(STEPS_PER_BAR_MAX, activePattern.stepCount ?? 16));
   return (60 / state.bpm) * 4 / stepsPerBar;
 }
 
-function getTrackScheduleSlot(track, baseStep) {
-  const visibleCellCount = getTrackVisibleCellCount(track);
-  const patternBaseSteps = BASE_GRID_STEPS_PER_BAR * getTrackBarCount(track);
+function getTrackScheduleSlot(track, baseStep, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
+  const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
+  const patternBaseSteps = BASE_GRID_STEPS_PER_BAR * getTrackBarCount(track, activePattern);
   const loopStep = ((baseStep % patternBaseSteps) + patternBaseSteps) % patternBaseSteps;
   return Math.floor((loopStep * visibleCellCount) / patternBaseSteps);
 }
 
-function shouldAdvanceTrackStep(track, baseStep) {
+function shouldAdvanceTrackStep(track, baseStep, pattern = getTrackPattern(track)) {
   const playbackState = state.trackPlaybackState[track.id - 1] ?? createTrackPlaybackState(track);
-  const slot = getTrackScheduleSlot(track, baseStep);
+  const slot = getTrackScheduleSlot(track, baseStep, pattern);
   if (slot === playbackState.lastScheduledSlot) return false;
   playbackState.lastScheduledSlot = slot;
   state.trackPlaybackState[track.id - 1] = playbackState;
   return true;
 }
 
-function resolveTrackPatternStep(track, { advance = false } = {}) {
-  const stepCount = getTrackVisibleCellCount(track);
+function resolveTrackPatternStep(track, { advance = false, pattern = getTrackPattern(track) } = {}) {
+  const activePattern = pattern ?? getTrackPattern(track);
+  const stepCount = getTrackVisibleCellCount(track, activePattern);
   const playbackState = state.trackPlaybackState[track.id - 1] ?? createTrackPlaybackState(track);
-  const activePattern = getTrackPattern(track);
   let index = 0;
 
   if (activePattern.playbackMode === "random") {
@@ -3375,6 +3542,7 @@ function updateCurrentStep(activeStep = -1) {
     button.classList.toggle("current", cellIndex === currentIndex);
   });
   updatePitchPlaybackHighlights();
+  renderComposerGrid();
 }
 
 function renderTrackSelector() {
@@ -3694,6 +3862,118 @@ function renderSequencePatternSwitcher() {
   });
 }
 
+function setComposerEnabled(enabled) {
+  state.composer.enabled = Boolean(enabled);
+  const transportRunning = isTransportRunning();
+  if (state.composer.enabled) {
+    state.composer.currentSlotIndex = 0;
+    state.composer.currentSlotStep = 0;
+    state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(0);
+    if (transportRunning) {
+      state.transport.currentStep = 0;
+      initializeComposerPlayback({ resetSlotIndex: true });
+    }
+  } else {
+    state.composer.currentSlotIndex = 0;
+    state.composer.currentSlotStep = 0;
+    state.composer.currentSlotLengthSteps = BASE_GRID_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT;
+    if (transportRunning) {
+      state.transport.currentStep = 0;
+      resetTrackPlaybackState();
+    }
+    syncAllTrackBuses();
+  }
+  state.currentTransportStep = transportRunning ? 0 : -1;
+  syncUi();
+  renderEffectsMatrix();
+  renderSequencePatternSwitcher();
+  renderComposerGrid();
+  renderPattern(state.currentTransportStep);
+  writeStoredSession();
+}
+
+function renderComposerGrid() {
+  if (!ui.composerGrid) return;
+  ui.composerGrid.innerHTML = "";
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "effects-matrix-row effects-matrix-header composer-matrix-header";
+  for (let slotIndex = 0; slotIndex < COMPOSER_SLOT_COUNT; slotIndex += 1) {
+    const headerCell = document.createElement("div");
+    headerCell.className = `effects-axis-label effects-track-head composer-slot-head${state.composer.currentSlotIndex === slotIndex && isComposerRunning() ? " active" : ""}`;
+    headerCell.textContent = String(slotIndex + 1);
+    headerRow.append(headerCell);
+  }
+  ui.composerGrid.append(headerRow);
+
+  state.tracks.forEach((track, trackIndex) => {
+    const row = document.createElement("div");
+    row.className = "effects-matrix-row effects-row composer-row";
+
+    const labelCell = document.createElement("div");
+    labelCell.className = `effects-axis-label effects-row-label${trackIndex === state.selectedTrackIndex ? " active" : ""}`;
+    labelCell.textContent = `T${track.id}`;
+    applyTrackColor(labelCell, track.color);
+    row.append(labelCell);
+
+    for (let slotIndex = 0; slotIndex < COMPOSER_SLOT_COUNT; slotIndex += 1) {
+      const cell = document.createElement("div");
+      cell.className = `effects-cell composer-cell${state.composer.currentSlotIndex === slotIndex && isComposerRunning() ? " active" : ""}`;
+      applyTrackColor(cell, track.color);
+
+      const select = document.createElement("select");
+      select.className = "composer-select";
+      select.dataset.trackIndex = String(trackIndex);
+      select.dataset.slotIndex = String(slotIndex);
+
+      const restOption = document.createElement("option");
+      restOption.value = "rest";
+      restOption.textContent = "REST";
+      select.append(restOption);
+
+      track.patterns.forEach((pattern, patternIndex) => {
+        if (!pattern.isDefined) return;
+        const option = document.createElement("option");
+        option.value = String(patternIndex);
+        option.textContent = `P${patternIndex + 1}`;
+        select.append(option);
+      });
+
+      select.value = String(getComposerAssignment(trackIndex, slotIndex));
+      select.addEventListener("change", () => {
+        const nextValue = select.value === "rest" ? "rest" : Math.max(0, Math.min(TRACK_PATTERN_COUNT - 1, Number(select.value) || 0));
+        state.composer.slots[trackIndex][slotIndex] = nextValue;
+        if (state.composer.enabled && state.composer.currentSlotIndex === slotIndex) {
+          const assignedPattern = getComposerAssignedPattern(trackIndex, slotIndex);
+          if (assignedPattern) {
+            state.playback?.updateTrackBus(trackIndex, track, assignedPattern);
+          }
+          resetTrackPlaybackState(trackIndex);
+          renderPattern(state.currentTransportStep);
+        }
+        renderComposerGrid();
+        writeStoredSession();
+      });
+
+      cell.append(select);
+      row.append(cell);
+    }
+
+    ui.composerGrid.append(row);
+  });
+
+  if (ui.composerToggle) {
+    ui.composerToggle.textContent = state.composer.enabled ? "ON" : "OFF";
+    ui.composerToggle.classList.toggle("active", state.composer.enabled);
+  }
+
+  if (ui.composerLoopToggle) {
+    ui.composerLoopToggle.textContent = state.composer.loop ? "↻" : ">|";
+    ui.composerLoopToggle.title = state.composer.loop ? "Loop composition" : "Play composition once";
+    ui.composerLoopToggle.classList.toggle("active", state.composer.loop);
+  }
+}
+
 function renderPattern(activeStep = state.currentTransportStep) {
   ui.patternGrid.innerHTML = "";
   state.tracks.forEach((track, trackIndex) => {
@@ -3854,6 +4134,7 @@ function syncUi() {
   ui.mixVolumeValue.textContent = `${Math.round(state.mixVolume * 100)}%`;
   renderPitchLanes();
   renderSequencePatternSwitcher();
+  renderComposerGrid();
   syncWorkspaceTabs();
   syncTransportButton();
   syncTrackSettingsOverlay();
@@ -4122,6 +4403,14 @@ ui.workspaceTabs.forEach((button) => {
     syncWorkspaceTabs();
     writeStoredSession();
   });
+});
+ui.composerToggle?.addEventListener("click", () => {
+  setComposerEnabled(!state.composer.enabled);
+});
+ui.composerLoopToggle?.addEventListener("click", () => {
+  state.composer.loop = !state.composer.loop;
+  renderComposerGrid();
+  writeStoredSession();
 });
 ui.trackStepFillType.addEventListener("change", () => {
   const nextType = ui.trackStepFillType.value;

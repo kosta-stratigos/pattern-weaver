@@ -1101,8 +1101,72 @@ input[type="range"]::-moz-range-thumb {
   height: auto;
 }
 
-.workspace-panel-composer .placeholder-panel {
-  min-height: 320px;
+.workspace-panel-composer {
+  display: grid;
+  gap: 14px;
+}
+
+.composer-matrix {
+  display: grid;
+  gap: 8px;
+}
+
+.composer-matrix .effects-matrix-row {
+  grid-template-columns: 72px repeat(16, minmax(0, 1fr));
+}
+
+.composer-slot-head.active {
+  color: var(--text);
+}
+
+.composer-row .effects-row-label {
+  align-self: stretch;
+}
+
+.composer-cell {
+  min-height: 42px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.composer-cell.active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--track-color, var(--accent)) 70%, white 30%);
+  background: color-mix(in srgb, var(--track-color, var(--accent)) 12%, rgba(255, 255, 255, 0.03));
+}
+
+.composer-select {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 22px 0 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.composer-actions button {
+  min-height: 38px;
+}
+
+#composer-toggle {
+  min-width: 96px;
+}
+
+#composer-loop-toggle {
+  min-width: 64px;
+  font-size: 1rem;
 }
 
 .add-pattern-panel {
