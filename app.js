@@ -121,12 +121,17 @@ const ui = {
   trackStepProbabilityValue: document.querySelector("#track-step-probability-value"),
   trackEnvelopeAttack: document.querySelector("#track-envelope-attack"),
   trackEnvelopeAttackValue: document.querySelector("#track-envelope-attack-value"),
+  trackEnvelopeAttackField: document.querySelector("#track-envelope-attack-field"),
   trackEnvelopeDecay: document.querySelector("#track-envelope-decay"),
   trackEnvelopeDecayValue: document.querySelector("#track-envelope-decay-value"),
+  trackEnvelopeDecayField: document.querySelector("#track-envelope-decay-field"),
+  trackEnvelopeType: document.querySelector("#track-envelope-type"),
   trackEnvelopeSustain: document.querySelector("#track-envelope-sustain"),
   trackEnvelopeSustainValue: document.querySelector("#track-envelope-sustain-value"),
+  trackEnvelopeSustainField: document.querySelector("#track-envelope-sustain-field"),
   trackEnvelopeRelease: document.querySelector("#track-envelope-release"),
   trackEnvelopeReleaseValue: document.querySelector("#track-envelope-release-value"),
+  trackEnvelopeReleaseField: document.querySelector("#track-envelope-release-field"),
   trackStepFillType: document.querySelector("#track-step-fill-type"),
   trackStepFillAmount: document.querySelector("#track-step-fill-amount"),
   trackStepFillAmountValue: document.querySelector("#track-step-fill-amount-value"),
@@ -171,6 +176,7 @@ const FILTER_TYPES = ["lowpass", "bandpass", "highpass"];
 const TRACK_PLAYBACK_MODES = ["forward", "ping-pong", "random", "reverse"];
 const TRACK_STEP_FILL_TYPES = ["none", "even", "random"];
 const TRACK_PITCH_FILL_TYPES = ["single", "rising", "falling", "random-once", "random-every"];
+const TRACK_ENVELOPE_TYPES = ["adsr", "ad", "looping", "hold"];
 const SYNTH_WAVES = ["sine", "triangle", "sawtooth", "square"];
 const SCALE_OPTIONS = [
   { value: "chromatic", label: "Chromatic", intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
@@ -331,6 +337,7 @@ function createDefaultPitchFillSettings() {
 
 function createDefaultTrackEnvelope() {
   return {
+    type: "adsr",
     attack: 10,
     decay: 80,
     sustain: 70,
@@ -403,6 +410,7 @@ function normalizePitchFillSettings(source = {}, fallback = createDefaultPitchFi
 
 function normalizeTrackEnvelope(source = {}, fallback = createDefaultTrackEnvelope()) {
   return {
+    type: TRACK_ENVELOPE_TYPES.includes(source.type) ? source.type : fallback.type,
     attack: Math.max(0, Math.min(2000, Number(source.attack) || fallback.attack)),
     decay: Math.max(0, Math.min(2000, Number(source.decay) || fallback.decay)),
     sustain: Math.max(0, Math.min(100, Number.isFinite(Number(source.sustain)) ? Number(source.sustain) : fallback.sustain)),
@@ -534,6 +542,62 @@ function applyAdsrToGain(gainParam, when, gateDuration, envelope, peakLevel = 1)
     gainParam.setValueAtTime(0.0001, releaseStart);
   }
 
+  return {
+    releaseStart,
+    stopTime: releaseStart + release,
+  };
+}
+
+function applyAdToGain(gainParam, when, gateDuration, envelope, peakLevel = 1) {
+  const attack = Math.max(0, (envelope?.attack ?? 0) / 1000);
+  const decay = Math.max(0, (envelope?.decay ?? 0) / 1000);
+  const peak = Math.max(0.0001, peakLevel);
+  const attackEnd = when + attack;
+  const noteEnd = when + Math.max(0.001, gateDuration);
+  const decayStart = Math.max(attackEnd, noteEnd - decay);
+
+  gainParam.cancelScheduledValues(when);
+  gainParam.setValueAtTime(0.0001, when);
+  if (attack > 0) {
+    gainParam.linearRampToValueAtTime(peak, attackEnd);
+  } else {
+    gainParam.setValueAtTime(peak, when);
+  }
+  gainParam.setValueAtTime(peak, decayStart);
+  if (decay > 0) {
+    gainParam.linearRampToValueAtTime(0.0001, noteEnd);
+  } else {
+    gainParam.setValueAtTime(0.0001, noteEnd);
+  }
+
+  return {
+    releaseStart: decayStart,
+    stopTime: noteEnd,
+  };
+}
+
+function applyTrackEnvelopeToGain(gainParam, when, gateDuration, envelope, peakLevel = 1) {
+  const envelopeType = TRACK_ENVELOPE_TYPES.includes(envelope?.type) ? envelope.type : "adsr";
+  if (envelopeType === "ad") return applyAdToGain(gainParam, when, gateDuration, envelope, peakLevel);
+  return applyAdsrToGain(gainParam, when, gateDuration, envelope, peakLevel);
+}
+
+function getEnvelopeType(envelope) {
+  return TRACK_ENVELOPE_TYPES.includes(envelope?.type) ? envelope.type : "adsr";
+}
+
+function getTrackEnvelopeTiming(when, gateDuration, envelope) {
+  const envelopeType = getEnvelopeType(envelope);
+  if (envelopeType === "ad") {
+    return {
+      releaseStart: Math.max(when, when + Math.max(0.001, gateDuration) - Math.max(0, (envelope?.decay ?? 0) / 1000)),
+      stopTime: when + Math.max(0.001, gateDuration),
+    };
+  }
+  const attack = Math.max(0, (envelope?.attack ?? 0) / 1000);
+  const decay = Math.max(0, (envelope?.decay ?? 0) / 1000);
+  const release = Math.max(0, (envelope?.release ?? 0) / 1000);
+  const releaseStart = when + Math.max(Math.max(0.001, gateDuration), attack + decay);
   return {
     releaseStart,
     stopTime: releaseStart + release,
@@ -700,8 +764,19 @@ class PlaybackLayer {
     this.output = audioContext.createGain();
     this.output.gain.value = 0.9;
     this.output.connect(audioContext.destination);
+    this.trackSustainedVoices = Array.from({ length: TRACK_COUNT }, () => null);
     this.trackBuses = Array.from({ length: TRACK_COUNT }, (_, index) => this.createTrackBus(index));
     this.trackBuses.forEach((_, index) => this.updateTrackBus(index, this.state.tracks[index]));
+  }
+
+  stopTrackSustainedVoice(trackIndex) {
+    const handle = this.trackSustainedVoices?.[trackIndex];
+    if (handle?.stop) handle.stop();
+    if (this.trackSustainedVoices) this.trackSustainedVoices[trackIndex] = null;
+  }
+
+  stopAllSustainedVoices() {
+    this.trackSustainedVoices?.forEach((_, trackIndex) => this.stopTrackSustainedVoice(trackIndex));
   }
 
   createNoiseBuffer() {
@@ -873,7 +948,7 @@ class PlaybackLayer {
 
     const voiceGain = this.audioContext.createGain();
     const gateDuration = loop ? Math.max(safeDuration, sustainDuration ?? safeDuration) : Math.max(safeDuration, sustainDuration ?? safeDuration);
-    const envelopeTiming = applyAdsrToGain(voiceGain.gain, when, gateDuration, envelope, 0.75 * level);
+    const envelopeTiming = applyTrackEnvelopeToGain(voiceGain.gain, when, gateDuration, envelope, 0.75 * level);
 
     source.connect(voiceGain);
     const busInput = this.trackBuses?.[trackIndex]?.input ?? this.output;
@@ -896,7 +971,18 @@ class PlaybackLayer {
         source.disconnect?.();
         voiceGain.disconnect?.();
       }, Math.max(0, disconnectDelayMs));
-      return true;
+      let stopped = false;
+      return {
+        stop: (stopWhen = this.audioContext.currentTime) => {
+          if (stopped) return;
+          stopped = true;
+          try {
+            voiceGain.gain.cancelScheduledValues(stopWhen);
+            voiceGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
+            source.stop(stopWhen + 0.05);
+          } catch {}
+        },
+      };
     }
     source.start(when, playbackOffset, safeDuration);
     source.stop(Math.max(when + safeDuration, baseStopTime));
@@ -904,7 +990,18 @@ class PlaybackLayer {
       source.disconnect?.();
       voiceGain.disconnect?.();
     }, Math.max(0, disconnectDelayMs));
-    return true;
+    let stopped = false;
+    return {
+      stop: (stopWhen = this.audioContext.currentTime) => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          voiceGain.gain.cancelScheduledValues(stopWhen);
+          voiceGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
+          source.stop(stopWhen + 0.05);
+        } catch {}
+      },
+    };
   }
 
   triggerGranular(settings, when = this.audioContext.currentTime, sliceIndex = null, noteDuration = 0.1) {
@@ -1036,7 +1133,7 @@ class PlaybackLayer {
     filterNode.frequency.setValueAtTime(clampFilterFrequency(settings.filterFrequency), when);
     filterNode.Q.setValueAtTime(clampFilterQ(settings.filterQ), when);
 
-    const envelopeTiming = applyAdsrToGain(
+    const envelopeTiming = applyTrackEnvelopeToGain(
       ampGain.gain,
       when,
       holdDuration,
@@ -1077,7 +1174,19 @@ class PlaybackLayer {
       filterNode.disconnect?.();
       ampGain.disconnect?.();
     }, Math.max(0, disconnectDelayMs));
-    return true;
+    let stopped = false;
+    return {
+      stop: (stopWhen = this.audioContext.currentTime) => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          ampGain.gain.cancelScheduledValues(stopWhen);
+          ampGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
+          oscillator.stop(stopWhen + 0.05);
+          noiseSource.stop(stopWhen + 0.05);
+        } catch {}
+      },
+    };
   }
 
   triggerTrack(track, when = this.audioContext.currentTime, sliceIndex = null, noteDuration = null, pitchOverride = null) {
@@ -1133,6 +1242,63 @@ class PlaybackLayer {
       noteDuration,
     );
   }
+
+  triggerHeldTrack(track, when = this.audioContext.currentTime, sliceIndex = null, pitchOverride = null) {
+    const playbackTrack = getTrackPlaybackSettings(track);
+    const sustainDuration = 60;
+    if (playbackTrack.mode === "synth") {
+      return this.triggerSynth(
+        {
+          trackIndex: playbackTrack.trackIndex,
+          wave: playbackTrack.synthWave,
+          waveShape: playbackTrack.synthWaveShape,
+          tuneMidi: pitchOverride?.pitchMidi ?? playbackTrack.synthTuneMidi,
+          level: playbackTrack.synthLevel,
+          noiseMix: playbackTrack.synthNoiseMix,
+          foldAmount: playbackTrack.synthFoldAmount,
+          filterType: playbackTrack.synthFilterType,
+          filterFrequency: playbackTrack.synthFilterFrequency,
+          filterQ: playbackTrack.synthFilterQ,
+          envelope: normalizeTrackEnvelope({ ...playbackTrack.envelope, sustain: 100, release: 120 }, playbackTrack.envelope),
+          voiceIndex: playbackTrack.voiceIndex,
+        },
+        when,
+        sustainDuration,
+      );
+    }
+    if (playbackTrack.mode === "granular") {
+      return this.triggerGranular(
+        {
+          trackIndex: playbackTrack.trackIndex,
+          grainSizeMs: playbackTrack.grainSize,
+          density: playbackTrack.grainDensity,
+          spray: playbackTrack.spray / 100,
+          pitch: pitchOverride?.pitchSemitones ?? playbackTrack.pitch,
+          reverse: playbackTrack.reverse,
+          level: 1,
+          sliceCount: playbackTrack.sliceCount,
+          grainLocation: playbackTrack.grainLocation,
+          voicePlacement: playbackTrack.voicePlacement,
+          voicePlaybackMode: "loop",
+          envelope: normalizeTrackEnvelope({ ...playbackTrack.envelope, sustain: 100, release: 120 }, playbackTrack.envelope),
+        },
+        when,
+        sliceIndex,
+        sustainDuration,
+      );
+    }
+    return this.triggerSlice(
+      {
+        ...playbackTrack,
+        pitch: pitchOverride?.pitchSemitones ?? playbackTrack.pitch,
+        voicePlaybackMode: "loop",
+        envelope: normalizeTrackEnvelope({ ...playbackTrack.envelope, sustain: 100, release: 120 }, playbackTrack.envelope),
+      },
+      when,
+      sliceIndex,
+      sustainDuration,
+    );
+  }
 }
 
 class TransportLayer {
@@ -1166,6 +1332,7 @@ class TransportLayer {
     this.intervalId = null;
     this.currentStep = 0;
     this.state.composer.currentSlotStep = 0;
+    this.playbackLayer.stopAllSustainedVoices();
     resetTrackPlaybackState();
     if (!this.state.composer.enabled) syncAllTrackBuses();
     if (this.onStep) this.onStep(-1);
@@ -1187,12 +1354,13 @@ class TransportLayer {
       if (!shouldAdvanceTrackStep(track, baseStep, patternForPlayback)) return;
       const cellIndex = resolveTrackPatternStep(track, { advance: true, pattern: patternForPlayback });
       const playbackState = this.state.trackPlaybackState[track.id - 1];
+      const envelopeType = getEnvelopeType(patternForPlayback.envelope);
       if (playbackState) {
         playbackState.lastTriggeredPatternIndex = -1;
         playbackState.lastTriggeredPitchMidi = null;
       }
-      if (!patternForPlayback.pattern[cellIndex]) return;
-      if (Math.random() * 100 > patternForPlayback.stepProbability) return;
+      const stepActive = Boolean(patternForPlayback.pattern[cellIndex]);
+      if (stepActive && Math.random() * 100 > patternForPlayback.stepProbability) return;
       if (!isTrackAudible(track)) return;
       const sliceIndex = resolvePlaybackSliceIndex(track, { advance: true });
       const noteDuration = getTrackTriggerDuration(track, patternForPlayback);
@@ -1201,9 +1369,51 @@ class TransportLayer {
         ? randomEveryNotes[Math.floor(Math.random() * randomEveryNotes.length)]
         : getTrackStepPitchMidi(track, cellIndex, patternForPlayback);
       const pitchSemitones = pitchMidi - PITCH_LANE_REFERENCE_MIDI;
+
+      if (envelopeType === "hold") {
+        if (!stepActive) return;
+        if (playbackState && Number.isFinite(playbackState.lastHeldPitchMidi) && playbackState.lastHeldPitchMidi === pitchMidi) {
+          playbackState.lastTriggeredPatternIndex = cellIndex;
+          playbackState.lastTriggeredPitchMidi = pitchMidi;
+          return;
+        }
+        this.playbackLayer.stopTrackSustainedVoice(track.id - 1);
+        const handle = this.playbackLayer.triggerHeldTrack(track, when, sliceIndex, { pitchMidi, pitchSemitones });
+        this.playbackLayer.trackSustainedVoices[track.id - 1] = handle;
+        if (playbackState) {
+          playbackState.lastHeldPitchMidi = pitchMidi;
+          playbackState.lastTriggeredPatternIndex = cellIndex;
+          playbackState.lastTriggeredPitchMidi = pitchMidi;
+        }
+        indicateTrackPlayback(track, sliceIndex);
+        return;
+      }
+
+      if (envelopeType === "looping") {
+        if (stepActive && playbackState) playbackState.lastLoopingPitchMidi = pitchMidi;
+        const loopPitchMidi = playbackState?.lastLoopingPitchMidi ?? pitchMidi ?? getTrackPitchMidi(track);
+        const loopingPitchSemitones = loopPitchMidi - PITCH_LANE_REFERENCE_MIDI;
+        const nextTriggerTime = playbackState?.nextLoopingTriggerTime ?? -1;
+        if (when + 0.0001 < nextTriggerTime) return;
+        const loopHandle = this.playbackLayer.triggerTrack(track, when, sliceIndex, noteDuration, {
+          pitchMidi: loopPitchMidi,
+          pitchSemitones: loopingPitchSemitones,
+        });
+        const envelopeTiming = getTrackEnvelopeTiming(when, noteDuration, patternForPlayback.envelope);
+        if (playbackState) {
+          playbackState.nextLoopingTriggerTime = envelopeTiming.stopTime;
+          playbackState.lastTriggeredPatternIndex = cellIndex;
+          playbackState.lastTriggeredPitchMidi = loopPitchMidi;
+        }
+        indicateTrackPlayback(track, sliceIndex);
+        return loopHandle;
+      }
+
+      if (!stepActive) return;
       if (playbackState) {
         playbackState.lastTriggeredPatternIndex = cellIndex;
         playbackState.lastTriggeredPitchMidi = pitchMidi;
+        playbackState.lastHeldPitchMidi = null;
       }
       indicateTrackPlayback(track, sliceIndex);
       this.playbackLayer.triggerTrack(track, when, sliceIndex, noteDuration, { pitchMidi, pitchSemitones });
@@ -1536,6 +1746,9 @@ function createTrackPlaybackState(track = createTrack(1), pattern = getTrackPatt
     lastTriggeredPatternIndex: -1,
     lastTriggeredPitchMidi: null,
     lastScheduledSlot: -1,
+    lastHeldPitchMidi: null,
+    lastLoopingPitchMidi: null,
+    nextLoopingTriggerTime: -1,
   };
 }
 
@@ -1556,17 +1769,20 @@ function readStoredSession() {
 function resetTrackPlaybackState(trackIndex = null) {
   if (Number.isInteger(trackIndex)) {
     const track = state.tracks[trackIndex];
+    state.playback?.stopTrackSustainedVoice(trackIndex);
     state.trackPlaybackState[trackIndex] = createTrackPlaybackState(track, getTrackPlaybackPattern(track) ?? getTrackPattern(track));
     drawWaveformOverview();
     return;
   }
 
+  state.playback?.stopAllSustainedVoices();
   state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track, getTrackPlaybackPattern(track) ?? getTrackPattern(track)));
 }
 
 function syncTrackPlaybackStateForPatternSwitch(trackIndex) {
   const track = state.tracks[trackIndex];
   if (!track) return;
+  state.playback?.stopTrackSustainedVoice(trackIndex);
   if (!isTransportRunning()) {
     resetTrackPlaybackState(trackIndex);
     return;
@@ -2876,6 +3092,7 @@ function syncTrackSettingsOverlay() {
   ui.trackPlaybackMode.value = activePattern.playbackMode;
   ui.trackStepProbability.value = String(activePattern.stepProbability);
   ui.trackStepProbabilityValue.textContent = `${activePattern.stepProbability}%`;
+  ui.trackEnvelopeType.value = getEnvelopeType(activePattern.envelope);
   ui.trackEnvelopeAttack.value = String(activePattern.envelope.attack);
   ui.trackEnvelopeAttackValue.textContent = String(activePattern.envelope.attack);
   ui.trackEnvelopeDecay.value = String(activePattern.envelope.decay);
@@ -2884,6 +3101,11 @@ function syncTrackSettingsOverlay() {
   ui.trackEnvelopeSustainValue.textContent = `${activePattern.envelope.sustain}%`;
   ui.trackEnvelopeRelease.value = String(activePattern.envelope.release);
   ui.trackEnvelopeReleaseValue.textContent = String(activePattern.envelope.release);
+  const envelopeType = getEnvelopeType(activePattern.envelope);
+  ui.trackEnvelopeAttackField?.classList.toggle("ui-hidden", envelopeType === "hold");
+  ui.trackEnvelopeDecayField?.classList.toggle("ui-hidden", envelopeType === "hold");
+  ui.trackEnvelopeSustainField?.classList.toggle("ui-hidden", !["adsr", "looping"].includes(envelopeType));
+  ui.trackEnvelopeReleaseField?.classList.toggle("ui-hidden", !["adsr", "looping"].includes(envelopeType));
   ui.trackStepFillType.value = activePattern.stepFill.type;
   ui.trackStepFillAmount.value = String(activePattern.stepFill.amount);
   ui.trackStepFillAmountValue.textContent = `${activePattern.stepFill.amount}%`;
@@ -4205,7 +4427,7 @@ function updateSelectedTrackPattern(patch) {
   const activePattern = getTrackPattern(track);
   activePattern.isDefined = true;
   Object.assign(activePattern, patch);
-  if ("stepCount" in patch || "playbackMode" in patch || "barCount" in patch) resetTrackPlaybackState(state.selectedTrackIndex);
+  if ("stepCount" in patch || "playbackMode" in patch || "barCount" in patch || "envelope" in patch) resetTrackPlaybackState(state.selectedTrackIndex);
   if ("stepFill" in patch) {
     activePattern.pattern = buildTrackFillPattern(track);
     applyTrackPitchFill(track);
@@ -4387,6 +4609,14 @@ ui.trackBars.addEventListener("input", () => updateSelectedTrackPattern({ barCou
 ui.trackSteps.addEventListener("input", () => updateSelectedTrackPattern({ stepCount: Number(ui.trackSteps.value) }));
 ui.trackPlaybackMode.addEventListener("change", () => updateSelectedTrackPattern({ playbackMode: ui.trackPlaybackMode.value }));
 ui.trackStepProbability.addEventListener("input", () => updateSelectedTrackPattern({ stepProbability: Number(ui.trackStepProbability.value) }));
+ui.trackEnvelopeType.addEventListener("change", () => {
+  updateSelectedTrackPattern({
+    envelope: normalizeTrackEnvelope({
+      ...getSelectedTrackPattern().envelope,
+      type: ui.trackEnvelopeType.value,
+    }, getSelectedTrackPattern().envelope),
+  });
+});
 ui.trackEnvelopeAttack.addEventListener("input", () => {
   updateSelectedTrackPattern({
     envelope: normalizeTrackEnvelope({
