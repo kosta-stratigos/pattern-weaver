@@ -1439,6 +1439,12 @@ function getComposerAssignedPattern(trackOrIndex, slotIndex = state.composer.cur
   return pattern?.isDefined ? pattern : null;
 }
 
+function getComposerAssignedPatternIndex(trackOrIndex, slotIndex = state.composer.currentSlotIndex) {
+  const trackIndex = Number.isInteger(trackOrIndex) ? trackOrIndex : Math.max(0, (trackOrIndex?.id ?? 1) - 1);
+  const assignment = getComposerAssignment(trackIndex, slotIndex);
+  return Number.isInteger(assignment) ? assignment : null;
+}
+
 function getComposerSlotLengthSteps(slotIndex = state.composer.currentSlotIndex) {
   let maxBars = 0;
   state.tracks.forEach((track, trackIndex) => {
@@ -1501,7 +1507,9 @@ function advanceComposerSlot() {
   state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(state.composer.currentSlotIndex);
   resetTrackPlaybackState();
   syncComposerTrackBuses();
+  renderEffectsMatrix();
   renderComposerGrid();
+  renderPattern(state.currentTransportStep);
   syncUi();
   writeStoredSession();
   return true;
@@ -2148,8 +2156,8 @@ function applyTrackPitchFill(track) {
   });
 }
 
-function assignPitchFillToStep(track, cellIndex) {
-  const activePattern = getTrackPattern(track);
+function assignPitchFillToStep(track, cellIndex, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
   const fill = activePattern.pitchFill;
   const visibleCellCount = getTrackVisibleCellCount(track);
   if (!activePattern.pattern[cellIndex] || cellIndex < 0 || cellIndex >= visibleCellCount) return;
@@ -3996,9 +4004,12 @@ function updateComposerGridState() {
 function renderPattern(activeStep = state.currentTransportStep) {
   ui.patternGrid.innerHTML = "";
   state.tracks.forEach((track, trackIndex) => {
-    const activePattern = getTrackPattern(track);
-    const stepsPerBar = Math.max(1, Math.min(STEPS_PER_BAR_MAX, activePattern.stepCount ?? 16));
-    const visibleCellCount = getTrackVisibleCellCount(track);
+    const displayPattern = getTrackPlaybackPattern(track) ?? getTrackPattern(track);
+    const displayPatternIndex = state.composer.enabled
+      ? getComposerAssignedPatternIndex(trackIndex)
+      : track.activePatternIndex;
+    const stepsPerBar = Math.max(1, Math.min(STEPS_PER_BAR_MAX, displayPattern.stepCount ?? 16));
+    const visibleCellCount = getTrackVisibleCellCount(track, displayPattern);
     const totalVisibleSlots = Math.min(MAX_PATTERN_CELLS, stepsPerBar * MAX_PATTERN_BARS);
     const row = document.createElement("div");
     row.className = "pattern-row";
@@ -4006,7 +4017,7 @@ function renderPattern(activeStep = state.currentTransportStep) {
     const label = document.createElement("button");
     label.className = `pattern-row-label${trackIndex === state.selectedTrackIndex ? " active" : ""}`;
     applyTrackColor(label, track.color);
-    label.innerHTML = `<span class="pattern-row-name">T${track.id}</span>`;
+    label.innerHTML = `<span class="pattern-row-name">T${track.id}:${displayPatternIndex == null ? "REST" : `P${displayPatternIndex + 1}`}</span>`;
     label.addEventListener("click", () => {
       openTrackSettingsOverlay(trackIndex);
     });
@@ -4032,9 +4043,9 @@ function renderPattern(activeStep = state.currentTransportStep) {
           continue;
         }
 
-        const enabled = activePattern.pattern[cellIndex];
+        const enabled = displayPattern.pattern[cellIndex];
         const pitchSelected = state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex;
-        const isBarStart = cellIndex % Math.max(1, activePattern.stepCount) === 0;
+        const isBarStart = cellIndex % Math.max(1, displayPattern.stepCount) === 0;
         const stepButton = document.createElement("button");
         stepButton.className = `step compact${enabled ? " active" : ""}${pitchSelected ? " pitch-target" : ""}`;
         applyTrackColor(stepButton, track.color);
@@ -4042,11 +4053,11 @@ function renderPattern(activeStep = state.currentTransportStep) {
         stepButton.dataset.cellIndex = String(cellIndex);
         if (cellIndex > 0 && isBarStart) stepButton.classList.add("bar-start");
         stepButton.textContent = isBarStart ? "1" : "";
-        stepButton.title = `Bar ${Math.floor(cellIndex / Math.max(1, activePattern.stepCount)) + 1}, Step ${(cellIndex % Math.max(1, activePattern.stepCount)) + 1}`;
+        stepButton.title = `Bar ${Math.floor(cellIndex / Math.max(1, displayPattern.stepCount)) + 1}, Step ${(cellIndex % Math.max(1, displayPattern.stepCount)) + 1}`;
         stepButton.setAttribute("aria-label", stepButton.title);
         stepButton.addEventListener("click", (event) => {
           state.selectedTrackIndex = trackIndex;
-          if (event.shiftKey && activePattern.pattern[cellIndex]) {
+          if (event.shiftKey && displayPattern.pattern[cellIndex]) {
             state.pitchStepSelection = { trackIndex, cellIndex };
             syncUi();
             renderTrackSelector();
@@ -4060,16 +4071,16 @@ function renderPattern(activeStep = state.currentTransportStep) {
           if (!event.shiftKey && state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex) {
             state.pitchStepSelection = { trackIndex: null, cellIndex: null };
           }
-          activePattern.pattern[cellIndex] = !activePattern.pattern[cellIndex];
-          if (activePattern.pattern[cellIndex]) {
-            assignPitchFillToStep(track, cellIndex);
+          displayPattern.pattern[cellIndex] = !displayPattern.pattern[cellIndex];
+          if (displayPattern.pattern[cellIndex]) {
+            assignPitchFillToStep(track, cellIndex, displayPattern);
           } else {
-            activePattern.stepPitches[cellIndex] = null;
+            displayPattern.stepPitches[cellIndex] = null;
             if (state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex) {
               state.pitchStepSelection = { trackIndex: null, cellIndex: null };
             }
           }
-          stepButton.classList.toggle("active", activePattern.pattern[cellIndex]);
+          stepButton.classList.toggle("active", displayPattern.pattern[cellIndex]);
           syncUi();
           renderEffectsMatrix();
           renderMixer();

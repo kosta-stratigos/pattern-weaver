@@ -1175,9 +1175,17 @@ input[type="range"]::-moz-range-thumb {
 
 .composer-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   align-items: center;
+  padding-top: 10px;
+  padding-bottom: 4px;
+}
+
+.composer-toggle-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .composer-toggle-group {
