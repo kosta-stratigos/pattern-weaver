@@ -1177,19 +1177,75 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  align-items: center;
 }
 
-.composer-actions button {
-  min-height: 38px;
+.composer-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 52%),
+    rgba(255, 255, 255, 0.03);
+  overflow: hidden;
 }
 
-#composer-toggle {
-  min-width: 96px;
+.composer-toggle-group button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: none;
 }
 
-#composer-loop-toggle {
-  min-width: 64px;
-  font-size: 1rem;
+.composer-toggle-group button + button {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.composer-toggle-group button.active {
+  background:
+    linear-gradient(180deg, rgba(79, 196, 184, 0.16), rgba(79, 196, 184, 0.08)),
+    rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.composer-toggle-group button:hover {
+  transform: none;
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.composer-toggle-group button.active:hover {
+  background:
+    linear-gradient(180deg, rgba(79, 196, 184, 0.18), rgba(79, 196, 184, 0.1)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.composer-icon-group button {
+  min-width: 56px;
+  padding: 0 12px;
+}
+
+.material-symbols-sharp {
+  font-family: "Material Symbols Sharp";
+  font-weight: 400;
+  font-style: normal;
+  font-size: 1.15rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
 }
 
 .add-pattern-panel {

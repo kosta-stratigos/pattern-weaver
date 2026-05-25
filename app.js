@@ -108,8 +108,10 @@ const ui = {
   swing: document.querySelector("#swing"),
   swingValue: document.querySelector("#swing-value"),
   composerGrid: document.querySelector("#composer-grid"),
-  composerToggle: document.querySelector("#composer-toggle"),
-  composerLoopToggle: document.querySelector("#composer-loop-toggle"),
+  composerModeOff: document.querySelector("#composer-mode-off"),
+  composerModeOn: document.querySelector("#composer-mode-on"),
+  composerPlayOnce: document.querySelector("#composer-play-once"),
+  composerPlayLoop: document.querySelector("#composer-play-loop"),
   trackSteps: document.querySelector("#track-steps"),
   trackStepsValue: document.querySelector("#track-steps-value"),
   trackBars: document.querySelector("#track-bars"),
@@ -3981,15 +3983,14 @@ function updateComposerGridState() {
     const slotIndex = Number(slotIndexRaw);
     cell.classList.toggle("active", running && slotIndex === state.composer.currentSlotIndex);
   });
-  if (ui.composerToggle) {
-    ui.composerToggle.textContent = state.composer.enabled ? "ON" : "OFF";
-    ui.composerToggle.classList.toggle("active", state.composer.enabled);
-  }
-  if (ui.composerLoopToggle) {
-    ui.composerLoopToggle.textContent = state.composer.loop ? "↻" : ">|";
-    ui.composerLoopToggle.title = state.composer.loop ? "Loop composition" : "Play composition once";
-    ui.composerLoopToggle.classList.toggle("active", state.composer.loop);
-  }
+  ui.composerModeOff?.classList.toggle("active", !state.composer.enabled);
+  ui.composerModeOff?.setAttribute("aria-pressed", String(!state.composer.enabled));
+  ui.composerModeOn?.classList.toggle("active", state.composer.enabled);
+  ui.composerModeOn?.setAttribute("aria-pressed", String(state.composer.enabled));
+  ui.composerPlayOnce?.classList.toggle("active", !state.composer.loop);
+  ui.composerPlayOnce?.setAttribute("aria-pressed", String(!state.composer.loop));
+  ui.composerPlayLoop?.classList.toggle("active", state.composer.loop);
+  ui.composerPlayLoop?.setAttribute("aria-pressed", String(state.composer.loop));
 }
 
 function renderPattern(activeStep = state.currentTransportStep) {
@@ -4422,12 +4423,24 @@ ui.workspaceTabs.forEach((button) => {
     writeStoredSession();
   });
 });
-ui.composerToggle?.addEventListener("click", () => {
-  setComposerEnabled(!state.composer.enabled);
+ui.composerModeOff?.addEventListener("click", () => {
+  if (!state.composer.enabled) return;
+  setComposerEnabled(false);
 });
-ui.composerLoopToggle?.addEventListener("click", () => {
-  state.composer.loop = !state.composer.loop;
-  renderComposerGrid();
+ui.composerModeOn?.addEventListener("click", () => {
+  if (state.composer.enabled) return;
+  setComposerEnabled(true);
+});
+ui.composerPlayOnce?.addEventListener("click", () => {
+  if (!state.composer.loop) return;
+  state.composer.loop = false;
+  updateComposerGridState();
+  writeStoredSession();
+});
+ui.composerPlayLoop?.addEventListener("click", () => {
+  if (state.composer.loop) return;
+  state.composer.loop = true;
+  updateComposerGridState();
   writeStoredSession();
 });
 ui.trackStepFillType.addEventListener("change", () => {
