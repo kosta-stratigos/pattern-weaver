@@ -1163,6 +1163,10 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text);
 }
 
+.composer-slot-head.is-disabled {
+  opacity: 0.34;
+}
+
 .composer-row .effects-row-label {
   align-self: stretch;
 }
@@ -1183,6 +1187,11 @@ input[type="range"]::-moz-range-thumb {
   background: color-mix(in srgb, var(--track-color, var(--accent)) 12%, rgba(255, 255, 255, 0.03));
 }
 
+.composer-cell.is-disabled {
+  opacity: 0.36;
+  filter: saturate(0.35);
+}
+
 .composer-select {
   width: 100%;
   min-height: 40px;
@@ -1195,6 +1204,45 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.composer-meta-row .composer-meta-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+}
+
+.composer-repeat-cell,
+.composer-slot-toggle-cell {
+  min-height: 38px;
+}
+
+.composer-repeat-input {
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: center;
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-family: var(--font-display);
+}
+
+.composer-slot-toggle {
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+.composer-slot-toggle.active {
+  color: var(--text);
 }
 
 .composer-actions {

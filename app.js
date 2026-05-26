@@ -348,14 +348,25 @@ function createDefaultComposerSlots() {
   return Array.from({ length: TRACK_COUNT }, () => Array.from({ length: COMPOSER_SLOT_COUNT }, () => "rest"));
 }
 
+function createDefaultComposerRepeats() {
+  return Array.from({ length: COMPOSER_SLOT_COUNT }, () => 1);
+}
+
+function createDefaultComposerEnabledSlots() {
+  return Array.from({ length: COMPOSER_SLOT_COUNT }, () => true);
+}
+
 function createDefaultComposerState() {
   return {
     enabled: false,
     loop: true,
     slots: createDefaultComposerSlots(),
+    repeats: createDefaultComposerRepeats(),
+    enabledSlots: createDefaultComposerEnabledSlots(),
     currentSlotIndex: 0,
     currentSlotStep: 0,
     currentSlotLengthSteps: BASE_GRID_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT,
+    currentSlotRepeat: 0,
   };
 }
 
@@ -1624,13 +1635,24 @@ function normalizeComposerState(source = {}) {
   const slotStep = Number.isFinite(Number(source.currentSlotStep))
     ? Math.max(0, Math.min(slotLengthSteps - 1, Number(source.currentSlotStep)))
     : fallback.currentSlotStep;
+  const repeats = Array.from({ length: COMPOSER_SLOT_COUNT }, (_, slotIndex) => {
+    const value = source.repeats?.[slotIndex];
+    return Math.max(1, Math.min(100, Number.parseInt(value, 10) || 1));
+  });
+  const enabledSlots = Array.from({ length: COMPOSER_SLOT_COUNT }, (_, slotIndex) =>
+    source.enabledSlots?.[slotIndex] == null ? true : Boolean(source.enabledSlots[slotIndex]));
   return {
     enabled: Boolean(source.enabled),
     loop: source.loop == null ? fallback.loop : Boolean(source.loop),
     slots: normalizeComposerSlots(source.slots),
+    repeats,
+    enabledSlots,
     currentSlotIndex: slotIndex,
     currentSlotStep: slotStep,
     currentSlotLengthSteps: slotLengthSteps,
+    currentSlotRepeat: Number.isFinite(Number(source.currentSlotRepeat))
+      ? Math.max(0, Math.min(repeats[slotIndex] - 1, Number(source.currentSlotRepeat)))
+      : fallback.currentSlotRepeat,
   };
 }
 
@@ -1654,7 +1676,16 @@ function getComposerAssignedPatternIndex(trackOrIndex, slotIndex = state.compose
   return Number.isInteger(assignment) ? assignment : null;
 }
 
+function isComposerSlotEnabled(slotIndex = state.composer.currentSlotIndex) {
+  return Boolean(state.composer.enabledSlots?.[slotIndex]);
+}
+
+function getComposerSlotRepeatCount(slotIndex = state.composer.currentSlotIndex) {
+  return Math.max(1, Math.min(100, Number.parseInt(state.composer.repeats?.[slotIndex], 10) || 1));
+}
+
 function getComposerSlotLengthSteps(slotIndex = state.composer.currentSlotIndex) {
+  if (!isComposerSlotEnabled(slotIndex)) return BASE_GRID_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT;
   let maxBars = 0;
   state.tracks.forEach((track, trackIndex) => {
     const pattern = getComposerAssignedPattern(trackIndex, slotIndex);
@@ -1666,6 +1697,7 @@ function getComposerSlotLengthSteps(slotIndex = state.composer.currentSlotIndex)
 
 function getTrackPlaybackPattern(track) {
   if (!state.composer.enabled) return getTrackPattern(track);
+  if (!isComposerSlotEnabled()) return null;
   return getComposerAssignedPattern(track) ?? null;
 }
 
@@ -1686,6 +1718,21 @@ function initializeComposerPlayback({ resetSlotIndex = true } = {}) {
   if (resetSlotIndex) {
     state.composer.currentSlotIndex = 0;
     state.composer.currentSlotStep = 0;
+    state.composer.currentSlotRepeat = 0;
+  }
+  const nextEnabledSlot = state.composer.enabledSlots.findIndex((enabled) => enabled);
+  if (nextEnabledSlot < 0) {
+    state.composer.enabled = false;
+    state.composer.currentSlotIndex = 0;
+    state.composer.currentSlotStep = 0;
+    state.composer.currentSlotRepeat = 0;
+    state.composer.currentSlotLengthSteps = BASE_GRID_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT;
+    syncAllTrackBuses();
+    renderComposerGrid();
+    return;
+  }
+  if (!isComposerSlotEnabled(state.composer.currentSlotIndex)) {
+    state.composer.currentSlotIndex = nextEnabledSlot;
   }
   state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(state.composer.currentSlotIndex);
   resetTrackPlaybackState();
@@ -1694,11 +1741,47 @@ function initializeComposerPlayback({ resetSlotIndex = true } = {}) {
 }
 
 function advanceComposerSlot() {
-  const nextSlotIndex = state.composer.currentSlotIndex + 1;
-  if (nextSlotIndex >= COMPOSER_SLOT_COUNT) {
+  const currentRepeats = getComposerSlotRepeatCount(state.composer.currentSlotIndex);
+  if (state.composer.currentSlotRepeat + 1 < currentRepeats) {
+    state.composer.currentSlotRepeat += 1;
+    state.composer.currentSlotStep = 0;
+    state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(state.composer.currentSlotIndex);
+    resetTrackPlaybackState();
+    syncComposerTrackBuses();
+    renderComposerGrid();
+    renderPattern(state.currentTransportStep);
+    syncUi();
+    writeStoredSession();
+    return true;
+  }
+
+  const enabledSlotIndexes = state.composer.enabledSlots
+    .map((enabled, index) => (enabled ? index : -1))
+    .filter((index) => index >= 0);
+
+  if (!enabledSlotIndexes.length) {
     if (!state.composer.loop) {
       state.composer.enabled = false;
-      state.composer.currentSlotIndex = 0;
+    }
+    state.composer.currentSlotIndex = 0;
+    state.composer.currentSlotRepeat = 0;
+    state.composer.currentSlotStep = 0;
+    state.composer.currentSlotLengthSteps = BASE_GRID_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT;
+    resetTrackPlaybackState();
+    syncAllTrackBuses();
+    renderComposerGrid();
+    syncUi();
+    writeStoredSession();
+    return false;
+  }
+
+  const currentEnabledIndex = enabledSlotIndexes.indexOf(state.composer.currentSlotIndex);
+  const nextEnabledPosition = currentEnabledIndex + 1;
+  if (nextEnabledPosition >= enabledSlotIndexes.length) {
+    if (!state.composer.loop) {
+      state.composer.enabled = false;
+      state.composer.currentSlotIndex = enabledSlotIndexes[0] ?? 0;
+      state.composer.currentSlotRepeat = 0;
       state.composer.currentSlotStep = 0;
       state.composer.currentSlotLengthSteps = BASE_GRID_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT;
       resetTrackPlaybackState();
@@ -1708,10 +1791,11 @@ function advanceComposerSlot() {
       writeStoredSession();
       return false;
     }
-    state.composer.currentSlotIndex = 0;
+    state.composer.currentSlotIndex = enabledSlotIndexes[0];
   } else {
-    state.composer.currentSlotIndex = nextSlotIndex;
+    state.composer.currentSlotIndex = enabledSlotIndexes[nextEnabledPosition];
   }
+  state.composer.currentSlotRepeat = 0;
   state.composer.currentSlotStep = 0;
   state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(state.composer.currentSlotIndex);
   resetTrackPlaybackState();
@@ -1886,6 +1970,8 @@ function writeStoredSession() {
       enabled: state.composer.enabled,
       loop: state.composer.loop,
       slots: state.composer.slots.map((row) => row.slice(0, COMPOSER_SLOT_COUNT)),
+      repeats: state.composer.repeats.slice(0, COMPOSER_SLOT_COUNT),
+      enabledSlots: state.composer.enabledSlots.slice(0, COMPOSER_SLOT_COUNT),
     },
     sample: {
       regionStart: state.sample.regionStart,
@@ -4182,6 +4268,7 @@ function renderComposerGrid() {
       const cell = document.createElement("div");
       cell.className = "effects-cell composer-cell";
       cell.dataset.composerSlotCell = `${trackIndex}:${slotIndex}`;
+      if (!isComposerSlotEnabled(slotIndex)) cell.classList.add("is-disabled");
       applyTrackColor(cell, track.color);
 
       const select = document.createElement("select");
@@ -4225,6 +4312,79 @@ function renderComposerGrid() {
     ui.composerGrid.append(row);
   });
 
+  const repeatsRow = document.createElement("div");
+  repeatsRow.className = "effects-matrix-row effects-row composer-row composer-meta-row";
+
+  const repeatsLabel = document.createElement("div");
+  repeatsLabel.className = "effects-axis-label effects-row-label composer-meta-label";
+  repeatsLabel.textContent = "RPT";
+  repeatsRow.append(repeatsLabel);
+
+  for (let slotIndex = 0; slotIndex < COMPOSER_SLOT_COUNT; slotIndex += 1) {
+    const cell = document.createElement("div");
+    cell.className = "effects-cell composer-cell composer-repeat-cell";
+    if (!isComposerSlotEnabled(slotIndex)) cell.classList.add("is-disabled");
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.inputMode = "numeric";
+    input.className = "composer-repeat-input";
+    input.value = String(getComposerSlotRepeatCount(slotIndex));
+    input.setAttribute("aria-label", `Composer slot ${slotIndex + 1} repeats`);
+    input.addEventListener("change", () => {
+      const nextValue = Math.max(1, Math.min(100, Number.parseInt(input.value, 10) || 1));
+      state.composer.repeats[slotIndex] = nextValue;
+      input.value = String(nextValue);
+      if (state.composer.currentSlotIndex === slotIndex) {
+        state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(slotIndex);
+      }
+      writeStoredSession();
+    });
+    cell.append(input);
+    repeatsRow.append(cell);
+  }
+  ui.composerGrid.append(repeatsRow);
+
+  const enabledRow = document.createElement("div");
+  enabledRow.className = "effects-matrix-row effects-row composer-row composer-meta-row";
+
+  const enabledLabel = document.createElement("div");
+  enabledLabel.className = "effects-axis-label effects-row-label composer-meta-label";
+  enabledLabel.textContent = "PLAY";
+  enabledRow.append(enabledLabel);
+
+  for (let slotIndex = 0; slotIndex < COMPOSER_SLOT_COUNT; slotIndex += 1) {
+    const cell = document.createElement("div");
+    cell.className = "effects-cell composer-cell composer-slot-toggle-cell";
+    if (!isComposerSlotEnabled(slotIndex)) cell.classList.add("is-disabled");
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = `composer-slot-toggle${isComposerSlotEnabled(slotIndex) ? " active" : ""}`;
+    toggle.textContent = isComposerSlotEnabled(slotIndex) ? "ON" : "OFF";
+    toggle.setAttribute("aria-pressed", String(isComposerSlotEnabled(slotIndex)));
+    toggle.addEventListener("click", () => {
+      const nextEnabled = !isComposerSlotEnabled(slotIndex);
+      state.composer.enabledSlots[slotIndex] = nextEnabled;
+      if (state.composer.enabled && state.composer.currentSlotIndex === slotIndex && !nextEnabled) {
+        advanceComposerSlot();
+        renderComposerGrid();
+        renderPattern(state.currentTransportStep);
+        writeStoredSession();
+        return;
+      }
+      if (state.composer.currentSlotIndex === slotIndex) {
+        state.composer.currentSlotLengthSteps = getComposerSlotLengthSteps(slotIndex);
+      }
+      renderComposerGrid();
+      renderPattern(state.currentTransportStep);
+      writeStoredSession();
+    });
+    cell.append(toggle);
+    enabledRow.append(cell);
+  }
+  ui.composerGrid.append(enabledRow);
+
   updateComposerGridState();
 }
 
@@ -4233,6 +4393,7 @@ function updateComposerGridState() {
   ui.composerGrid?.querySelectorAll("[data-composer-slot-head]").forEach((cell) => {
     const slotIndex = Number(cell.dataset.composerSlotHead);
     cell.classList.toggle("active", running && slotIndex === state.composer.currentSlotIndex);
+    cell.classList.toggle("is-disabled", !isComposerSlotEnabled(slotIndex));
   });
   ui.composerGrid?.querySelectorAll("[data-composer-slot-cell]").forEach((cell) => {
     const [trackIndexRaw, slotIndexRaw] = String(cell.dataset.composerSlotCell).split(":");
