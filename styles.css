@@ -1218,9 +1218,11 @@ input[type="range"]::-moz-range-thumb {
 
 .composer-repeat-input {
   width: 100%;
-  min-height: 38px;
-  border: 0;
-  background: transparent;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   text-align: center;
   font-size: 0.74rem;
@@ -1228,21 +1230,52 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--font-display);
 }
 
-.composer-slot-toggle {
+.composer-slot-switch {
   width: 100%;
   min-height: 38px;
   border: 0;
   background: transparent;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   box-shadow: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
 }
 
-.composer-slot-toggle.active {
-  color: var(--text);
+.composer-slot-switch-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.composer-slot-switch-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.composer-slot-switch.active .composer-slot-switch-track {
+  background: rgba(84, 214, 212, 0.24);
+  border-color: rgba(84, 214, 212, 0.34);
+}
+
+.composer-slot-switch.active .composer-slot-switch-thumb {
+  transform: translateX(14px);
+  background: var(--accent-2);
+}
+
+.composer-slot-switch:focus-visible .composer-slot-switch-track {
+  outline: 1px solid rgba(184, 236, 234, 0.7);
+  outline-offset: 2px;
 }
 
 .composer-actions {

@@ -4360,9 +4360,14 @@ function renderComposerGrid() {
 
     const toggle = document.createElement("button");
     toggle.type = "button";
-    toggle.className = `composer-slot-toggle${isComposerSlotEnabled(slotIndex) ? " active" : ""}`;
-    toggle.textContent = isComposerSlotEnabled(slotIndex) ? "ON" : "OFF";
+    toggle.className = `composer-slot-switch${isComposerSlotEnabled(slotIndex) ? " active" : ""}`;
     toggle.setAttribute("aria-pressed", String(isComposerSlotEnabled(slotIndex)));
+    toggle.setAttribute("aria-label", `Composer slot ${slotIndex + 1} ${isComposerSlotEnabled(slotIndex) ? "enabled" : "disabled"}`);
+    toggle.innerHTML = `
+      <span class="composer-slot-switch-track" aria-hidden="true">
+        <span class="composer-slot-switch-thumb"></span>
+      </span>
+    `;
     toggle.addEventListener("click", () => {
       const nextEnabled = !isComposerSlotEnabled(slotIndex);
       state.composer.enabledSlots[slotIndex] = nextEnabled;
