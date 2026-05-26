@@ -450,9 +450,13 @@
               <div id="composer-grid" class="effects-matrix composer-matrix"></div>
               <div class="composer-actions">
                 <div class="composer-toggle-cluster">
-                  <div class="composer-toggle-group" role="group" aria-label="Composer playback mode">
-                    <button id="composer-mode-off" type="button">OFF</button>
-                    <button id="composer-mode-on" type="button">ON</button>
+                  <div class="composer-playback-control">
+                    <span class="composer-playback-label">Composer Playback</span>
+                    <button id="composer-playback-toggle" type="button" class="composer-slot-switch composer-playback-switch" aria-pressed="false" aria-label="Composer playback off">
+                      <span class="composer-slot-switch-track" aria-hidden="true">
+                        <span class="composer-slot-switch-thumb"></span>
+                      </span>
+                    </button>
                   </div>
                   <div class="composer-toggle-group composer-icon-group" role="group" aria-label="Composer repeat mode">
                     <button id="composer-play-once" type="button" title="Play once" aria-label="Play once">

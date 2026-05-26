@@ -107,8 +107,7 @@ const ui = {
   swing: document.querySelector("#swing"),
   swingValue: document.querySelector("#swing-value"),
   composerGrid: document.querySelector("#composer-grid"),
-  composerModeOff: document.querySelector("#composer-mode-off"),
-  composerModeOn: document.querySelector("#composer-mode-on"),
+  composerPlaybackToggle: document.querySelector("#composer-playback-toggle"),
   composerPlayOnce: document.querySelector("#composer-play-once"),
   composerPlayLoop: document.querySelector("#composer-play-loop"),
   trackSteps: document.querySelector("#track-steps"),
@@ -4356,7 +4355,6 @@ function renderComposerGrid() {
   for (let slotIndex = 0; slotIndex < COMPOSER_SLOT_COUNT; slotIndex += 1) {
     const cell = document.createElement("div");
     cell.className = "effects-cell composer-cell composer-slot-toggle-cell";
-    if (!isComposerSlotEnabled(slotIndex)) cell.classList.add("is-disabled");
 
     const toggle = document.createElement("button");
     toggle.type = "button";
@@ -4405,10 +4403,9 @@ function updateComposerGridState() {
     const slotIndex = Number(slotIndexRaw);
     cell.classList.toggle("active", running && slotIndex === state.composer.currentSlotIndex);
   });
-  ui.composerModeOff?.classList.toggle("active", !state.composer.enabled);
-  ui.composerModeOff?.setAttribute("aria-pressed", String(!state.composer.enabled));
-  ui.composerModeOn?.classList.toggle("active", state.composer.enabled);
-  ui.composerModeOn?.setAttribute("aria-pressed", String(state.composer.enabled));
+  ui.composerPlaybackToggle?.classList.toggle("active", state.composer.enabled);
+  ui.composerPlaybackToggle?.setAttribute("aria-pressed", String(state.composer.enabled));
+  ui.composerPlaybackToggle?.setAttribute("aria-label", `Composer playback ${state.composer.enabled ? "on" : "off"}`);
   ui.composerPlayOnce?.classList.toggle("active", !state.composer.loop);
   ui.composerPlayOnce?.setAttribute("aria-pressed", String(!state.composer.loop));
   ui.composerPlayLoop?.classList.toggle("active", state.composer.loop);
@@ -4873,13 +4870,8 @@ ui.workspaceTabs.forEach((button) => {
     writeStoredSession();
   });
 });
-ui.composerModeOff?.addEventListener("click", () => {
-  if (!state.composer.enabled) return;
-  setComposerEnabled(false);
-});
-ui.composerModeOn?.addEventListener("click", () => {
-  if (state.composer.enabled) return;
-  setComposerEnabled(true);
+ui.composerPlaybackToggle?.addEventListener("click", () => {
+  setComposerEnabled(!state.composer.enabled);
 });
 ui.composerPlayOnce?.addEventListener("click", () => {
   if (!state.composer.loop) return;

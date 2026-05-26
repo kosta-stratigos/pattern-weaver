@@ -1214,6 +1214,9 @@ input[type="range"]::-moz-range-thumb {
 .composer-repeat-cell,
 .composer-slot-toggle-cell {
   min-height: 38px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .composer-repeat-input {
@@ -1290,7 +1293,21 @@ input[type="range"]::-moz-range-thumb {
 .composer-toggle-cluster {
   display: inline-flex;
   align-items: center;
+  gap: 14px;
+}
+
+.composer-playback-control {
+  display: inline-flex;
+  align-items: center;
   gap: 10px;
+}
+
+.composer-playback-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .composer-toggle-group {
