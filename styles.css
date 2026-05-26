@@ -1101,6 +1101,30 @@ input[type="range"]::-moz-range-thumb {
   height: auto;
 }
 
+.workspace-panel-patterns {
+  display: grid;
+}
+
+.workspace-patterns-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-patterns-head {
+  margin-bottom: 0;
+}
+
+.track-settings-panel-group {
+  padding: 14px;
+}
+
+.pattern-settings-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
 .workspace-panel-composer {
   display: grid;
   gap: 14px;

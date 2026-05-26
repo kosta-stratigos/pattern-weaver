@@ -22,10 +22,9 @@ const ui = {
   workspaceTabs: Array.from(document.querySelectorAll("[data-workspace-tab]")),
   workspacePanels: Array.from(document.querySelectorAll("[data-workspace-panel]")),
   pitchLanes: document.querySelector("#pitch-lanes"),
-  trackSettingsOverlay: document.querySelector("#track-settings-overlay"),
   trackSettingsGroup: document.querySelector("#track-settings-group"),
+  trackSettingsTrackSelect: document.querySelector("#track-settings-track-select"),
   trackSettingsTrack: document.querySelector("#track-settings-track"),
-  trackSettingsClose: document.querySelector("#track-settings-close"),
   addPatternOverlay: document.querySelector("#add-pattern-overlay"),
   addPatternTitle: document.querySelector("#add-pattern-title"),
   addPatternClose: document.querySelector("#add-pattern-close"),
@@ -1969,7 +1968,7 @@ function applyStoredSession() {
   state.selectedVoiceIndex = Number.isFinite(stored.selectedVoiceIndex)
     ? Math.max(0, Math.min(TRACK_COUNT - 1, stored.selectedVoiceIndex))
     : 0;
-  state.workspaceTab = ["voices", "track-effects", "pattern-switcher", "composer"].includes(stored.workspaceTab)
+  state.workspaceTab = ["voices", "patterns", "track-effects", "pattern-switcher", "composer"].includes(stored.workspaceTab)
     ? stored.workspaceTab
     : state.workspaceTab;
   state.mixVolume = Number.isFinite(stored.mixVolume) ? Math.max(0, Math.min(1, stored.mixVolume)) : state.mixVolume;
@@ -3072,18 +3071,47 @@ function syncSampleBrowserOverlay() {
 }
 
 function syncTrackSettingsOverlay() {
-  if (!ui.trackSettingsOverlay) return;
-  const isOpen = state.trackSettingsOverlay.open;
-  ui.trackSettingsOverlay.classList.toggle("is-hidden", !isOpen);
-  ui.trackSettingsOverlay.setAttribute("aria-hidden", String(!isOpen));
-  if (!isOpen) return;
-
-  const track = state.tracks[state.trackSettingsOverlay.trackIndex] ?? getSelectedTrack();
+  if (!(ui.trackSettingsGroup instanceof HTMLElement)) return;
+  const track = state.tracks[state.selectedTrackIndex] ?? getSelectedTrack();
   const activePattern = getTrackPattern(track);
   if (ui.trackSettingsTrack) {
     ui.trackSettingsTrack.textContent = `${track.name} • ${formatBarCountLabel(activePattern.barCount)} • ${activePattern.name}`;
   }
-  ui.trackPatternSelect.value = String(track.activePatternIndex);
+  if (ui.trackSettingsTrackSelect instanceof HTMLSelectElement) {
+    const currentValue = ui.trackSettingsTrackSelect.value;
+    ui.trackSettingsTrackSelect.innerHTML = "";
+    state.tracks.forEach((candidateTrack, trackIndex) => {
+      const option = document.createElement("option");
+      option.value = String(trackIndex);
+      option.textContent = `Track ${candidateTrack.id}`;
+      ui.trackSettingsTrackSelect.append(option);
+    });
+    ui.trackSettingsTrackSelect.value = state.tracks.some((_, index) => String(index) === currentValue)
+      ? String(track.id - 1)
+      : String(track.id - 1);
+  }
+  if (ui.trackPatternSelect instanceof HTMLSelectElement) {
+    const currentValue = ui.trackPatternSelect.value;
+    ui.trackPatternSelect.innerHTML = "";
+    track.patterns.forEach((pattern, patternIndex) => {
+      if (!pattern.isDefined && patternIndex !== track.activePatternIndex) return;
+      const option = document.createElement("option");
+      option.value = String(patternIndex);
+      option.textContent = `Pattern ${patternIndex + 1}`;
+      ui.trackPatternSelect.append(option);
+    });
+    const nextUndefinedPatternIndex = track.patterns.findIndex((pattern) => !pattern.isDefined);
+    if (nextUndefinedPatternIndex >= 0) {
+      const addOption = document.createElement("option");
+      addOption.value = "add-new";
+      addOption.textContent = "Add New";
+      ui.trackPatternSelect.append(addOption);
+    }
+    const desiredValue = String(track.activePatternIndex);
+    ui.trackPatternSelect.value = Array.from(ui.trackPatternSelect.options).some((option) => option.value === desiredValue)
+      ? desiredValue
+      : (currentValue === "add-new" ? "add-new" : desiredValue);
+  }
   ui.patternVoiceSelect.value = String(track.voiceIndex);
   ui.trackBars.value = String(activePattern.barCount);
   ui.trackBarsValue.textContent = String(activePattern.barCount);
@@ -3162,17 +3190,16 @@ function syncAddPatternOverlay() {
 
 function openTrackSettingsOverlay(trackIndex) {
   state.selectedTrackIndex = trackIndex;
+  state.workspaceTab = "patterns";
   state.filterOverlay.open = false;
   state.delayOverlay.open = false;
   state.driftOverlay.open = false;
   state.swellOverlay.open = false;
-  state.trackSettingsOverlay = {
-    open: true,
-    trackIndex,
-  };
   syncUi();
+  syncWorkspaceTabs();
   renderTrackSelector();
   renderEffectsMatrix();
+  renderSequencePatternSwitcher();
   renderMixer();
   renderPattern();
   drawWaveform();
@@ -3180,7 +3207,6 @@ function openTrackSettingsOverlay(trackIndex) {
 }
 
 function closeTrackSettingsOverlay() {
-  state.trackSettingsOverlay.open = false;
   syncTrackSettingsOverlay();
 }
 
@@ -4652,7 +4678,24 @@ ui.trackEnvelopeRelease.addEventListener("input", () => {
 ui.patternVoiceSelect.addEventListener("change", () => {
   updateSelectedTrack({ voiceIndex: Number(ui.patternVoiceSelect.value) });
 });
+ui.trackSettingsTrackSelect?.addEventListener("change", () => {
+  state.selectedTrackIndex = Math.max(0, Math.min(TRACK_COUNT - 1, Number(ui.trackSettingsTrackSelect.value) || 0));
+  syncUi();
+  renderTrackSelector();
+  renderEffectsMatrix();
+  renderSequencePatternSwitcher();
+  renderMixer();
+  renderPattern();
+  drawWaveform();
+  writeStoredSession();
+});
 ui.trackPatternSelect.addEventListener("change", () => {
+  if (ui.trackPatternSelect.value === "add-new") {
+    const nextUndefinedPatternIndex = getSelectedTrack().patterns.findIndex((pattern) => !pattern.isDefined);
+    ui.trackPatternSelect.value = String(getSelectedTrack().activePatternIndex);
+    if (nextUndefinedPatternIndex >= 0) openAddPatternOverlay(state.selectedTrackIndex, nextUndefinedPatternIndex);
+    return;
+  }
   activateTrackPattern(state.selectedTrackIndex, Number(ui.trackPatternSelect.value), { markDefined: true });
 });
 ui.workspaceTabs.forEach((button) => {
@@ -4733,11 +4776,6 @@ ui.trackPitchFillTo.addEventListener("change", () => {
       to: Number(ui.trackPitchFillTo.value),
     }, currentPattern.pitchFill),
   });
-});
-ui.trackSettingsClose.addEventListener("click", () => closeTrackSettingsOverlay());
-ui.trackSettingsOverlay.addEventListener("click", (event) => {
-  if (!(event.target instanceof HTMLElement)) return;
-  if (event.target.dataset.trackSettingsOverlayClose === "true") closeTrackSettingsOverlay();
 });
 ui.addPatternClose.addEventListener("click", () => closeAddPatternOverlay());
 ui.addPatternOverlay.addEventListener("click", (event) => {
@@ -4930,10 +4968,6 @@ ui.transportToggle.addEventListener("click", async () => {
 });
 
 window.addEventListener("keydown", async (event) => {
-  if (event.key === "Escape" && state.trackSettingsOverlay.open) {
-    closeTrackSettingsOverlay();
-    return;
-  }
   if (event.key === "Escape" && state.addPatternOverlay.open) {
     closeAddPatternOverlay();
     return;

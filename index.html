@@ -82,6 +82,7 @@
         <section class="panel pane-workspace">
           <div id="workspace-tabs" class="workspace-tabs" role="tablist" aria-label="Workspace Sections">
             <button class="workspace-tab active" type="button" role="tab" aria-selected="true" data-workspace-tab="voices">Voices</button>
+            <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="patterns">Patterns</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="track-effects">Pattern Effects</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="pattern-switcher">Pattern Switcher</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="composer">Composer</button>
@@ -275,6 +276,168 @@
               </div>
             </section>
 
+            <section class="workspace-panel workspace-panel-patterns" data-workspace-panel="patterns">
+              <div class="workspace-patterns-shell">
+                <div class="panel-head workspace-patterns-head">
+                  <div class="panel-head-copy">
+                    <h2 id="track-settings-title">Pattern Settings</h2>
+                    <p id="track-settings-track"></p>
+                  </div>
+                </div>
+                <div id="track-settings-group" class="control-group sequence-settings-group track-settings-panel-group">
+                  <div class="pattern-settings-toolbar">
+                    <label class="compact-field">
+                      Track
+                      <select id="track-settings-track-select"></select>
+                    </label>
+                    <label class="compact-field">
+                      Pattern
+                      <select id="track-pattern-select"></select>
+                    </label>
+                  </div>
+                  <div class="sequence-settings-stack pattern-settings-stack">
+                    <section class="control-group nested-control-group track-step-fill-group" aria-labelledby="track-sequencer-title">
+                      <div class="control-group-head">
+                        <h3 id="track-sequencer-title">Sequencer</h3>
+                      </div>
+                      <div class="control-grid track-settings-grid">
+                        <label class="compact-field">
+                          Voice
+                          <select id="pattern-voice-select">
+                            <option value="0">Voice 1</option>
+                            <option value="1">Voice 2</option>
+                            <option value="2">Voice 3</option>
+                            <option value="3">Voice 4</option>
+                          </select>
+                        </label>
+                        <label class="compact-field">
+                          Steps / Bar
+                          <div class="slider-row">
+                            <input id="track-steps" type="range" min="1" max="32" value="16" />
+                            <span id="track-steps-value" class="value-pill">16</span>
+                          </div>
+                        </label>
+                        <label class="compact-field">
+                          Bars
+                          <div class="slider-row">
+                            <input id="track-bars" type="range" min="1" max="8" value="2" />
+                            <span id="track-bars-value" class="value-pill">2</span>
+                          </div>
+                        </label>
+                        <label class="compact-field">
+                          Playback Mode
+                          <select id="track-playback-mode">
+                            <option value="forward">Forward</option>
+                            <option value="ping-pong">Ping Pong</option>
+                            <option value="random">Random</option>
+                            <option value="reverse">Reverse</option>
+                          </select>
+                        </label>
+                        <label class="compact-field">
+                          Step Probability
+                          <div class="slider-row">
+                            <input id="track-step-probability" type="range" min="0" max="100" value="100" />
+                            <span id="track-step-probability-value" class="value-pill">100%</span>
+                          </div>
+                        </label>
+                      </div>
+                    </section>
+                    <section class="control-group nested-control-group track-step-fill-group" aria-labelledby="track-envelope-title">
+                      <div class="control-group-head">
+                        <h3 id="track-envelope-title">Envelope</h3>
+                      </div>
+                      <div class="control-grid track-settings-grid">
+                        <label class="compact-field span-2">
+                          Type
+                          <select id="track-envelope-type">
+                            <option value="adsr">ADSR</option>
+                            <option value="ad">AD</option>
+                            <option value="looping">Looping</option>
+                            <option value="hold">HOLD</option>
+                          </select>
+                        </label>
+                        <label id="track-envelope-attack-field" class="compact-field">
+                          Attack (ms)
+                          <div class="slider-row">
+                            <input id="track-envelope-attack" type="range" min="0" max="2000" step="1" value="10" />
+                            <span id="track-envelope-attack-value" class="value-pill">10</span>
+                          </div>
+                        </label>
+                        <label id="track-envelope-decay-field" class="compact-field">
+                          Decay (ms)
+                          <div class="slider-row">
+                            <input id="track-envelope-decay" type="range" min="0" max="2000" step="1" value="80" />
+                            <span id="track-envelope-decay-value" class="value-pill">80</span>
+                          </div>
+                        </label>
+                        <label id="track-envelope-sustain-field" class="compact-field">
+                          Sustain (%)
+                          <div class="slider-row">
+                            <input id="track-envelope-sustain" type="range" min="0" max="100" step="1" value="70" />
+                            <span id="track-envelope-sustain-value" class="value-pill">70%</span>
+                          </div>
+                        </label>
+                        <label id="track-envelope-release-field" class="compact-field">
+                          Release (ms)
+                          <div class="slider-row">
+                            <input id="track-envelope-release" type="range" min="0" max="3000" step="1" value="120" />
+                            <span id="track-envelope-release-value" class="value-pill">120</span>
+                          </div>
+                        </label>
+                      </div>
+                    </section>
+                    <section class="control-group nested-control-group track-step-fill-group" aria-labelledby="track-step-fill-title">
+                      <div class="control-group-head">
+                        <h3 id="track-step-fill-title">Step Fill</h3>
+                      </div>
+                      <div class="control-grid track-settings-grid">
+                        <label class="compact-field">
+                          Type
+                          <select id="track-step-fill-type">
+                            <option value="none">None</option>
+                            <option value="even">Even</option>
+                            <option value="random">Random</option>
+                          </select>
+                        </label>
+                        <label class="compact-field">
+                          Amount
+                          <div class="slider-row">
+                            <input id="track-step-fill-amount" type="range" min="0" max="100" value="0" />
+                            <span id="track-step-fill-amount-value" class="value-pill">0%</span>
+                          </div>
+                        </label>
+                      </div>
+                    </section>
+                    <section class="control-group nested-control-group track-step-fill-group" aria-labelledby="track-pitch-fill-title">
+                      <div class="control-group-head">
+                        <h3 id="track-pitch-fill-title">Pitch Fill</h3>
+                      </div>
+                      <div class="control-grid track-settings-grid">
+                        <label class="compact-field">
+                          Type
+                          <select id="track-pitch-fill-type">
+                            <option value="single">Single</option>
+                            <option value="rising">Rising</option>
+                            <option value="falling">Falling</option>
+                            <option value="random-once">Random Once</option>
+                            <option value="random-every">Random Every</option>
+                          </select>
+                        </label>
+                        <label class="compact-field">
+                          From
+                          <select id="track-pitch-fill-from"></select>
+                        </label>
+                        <label class="compact-field" id="track-pitch-fill-to-field">
+                          To
+                          <select id="track-pitch-fill-to"></select>
+                        </label>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <section class="workspace-panel workspace-panel-track-effects" data-workspace-panel="track-effects">
               <div id="effects-matrix" class="effects-matrix"></div>
             </section>
@@ -329,173 +492,6 @@
             </label>
           </div>
         </section>
-      </section>
-    </div>
-
-    <div id="track-settings-overlay" class="overlay-shell is-hidden" aria-hidden="true">
-      <div class="overlay-backdrop" data-track-settings-overlay-close="true"></div>
-      <section class="overlay-panel" role="dialog" aria-modal="true" aria-labelledby="track-settings-title">
-        <div class="panel-head overlay-head">
-          <div class="panel-head-copy">
-            <h2 id="track-settings-title">Pattern Settings</h2>
-            <p id="track-settings-track"></p>
-          </div>
-          <button id="track-settings-close" type="button">Close</button>
-        </div>
-        <div id="track-settings-group" class="control-group sequence-settings-group track-settings-overlay-group">
-          <div class="sequence-settings-stack pattern-settings-stack">
-            <label class="compact-field span-2">
-              Pattern
-              <select id="track-pattern-select">
-                <option value="0">Pattern 1</option>
-                <option value="1">Pattern 2</option>
-                <option value="2">Pattern 3</option>
-                <option value="3">Pattern 4</option>
-                <option value="4">Pattern 5</option>
-                <option value="5">Pattern 6</option>
-                <option value="6">Pattern 7</option>
-                <option value="7">Pattern 8</option>
-              </select>
-            </label>
-            <section class="control-group nested-control-group track-step-fill-group" aria-labelledby="track-sequencer-title">
-              <div class="control-group-head">
-                <h3 id="track-sequencer-title">Sequencer</h3>
-              </div>
-              <div class="control-grid track-settings-grid">
-                <label class="compact-field">
-                  Voice
-                  <select id="pattern-voice-select">
-                    <option value="0">Voice 1</option>
-                    <option value="1">Voice 2</option>
-                    <option value="2">Voice 3</option>
-                    <option value="3">Voice 4</option>
-                  </select>
-                </label>
-                <label class="compact-field">
-                  Steps / Bar
-                  <div class="slider-row">
-                    <input id="track-steps" type="range" min="1" max="32" value="16" />
-                    <span id="track-steps-value" class="value-pill">16</span>
-                  </div>
-                </label>
-                <label class="compact-field">
-                  Bars
-                  <div class="slider-row">
-                    <input id="track-bars" type="range" min="1" max="8" value="2" />
-                    <span id="track-bars-value" class="value-pill">2</span>
-                  </div>
-                </label>
-                <label class="compact-field">
-                  Playback Mode
-                  <select id="track-playback-mode">
-                    <option value="forward">Forward</option>
-                    <option value="ping-pong">Ping Pong</option>
-                    <option value="random">Random</option>
-                    <option value="reverse">Reverse</option>
-                  </select>
-                </label>
-                <label class="compact-field">
-                  Step Probability
-                  <div class="slider-row">
-                    <input id="track-step-probability" type="range" min="0" max="100" value="100" />
-                    <span id="track-step-probability-value" class="value-pill">100%</span>
-                  </div>
-                </label>
-              </div>
-            </section>
-            <section class="control-group nested-control-group track-step-fill-group" aria-labelledby="track-envelope-title">
-              <div class="control-group-head">
-                <h3 id="track-envelope-title">Envelope</h3>
-              </div>
-              <div class="control-grid track-settings-grid">
-                <label class="compact-field span-2">
-                  Type
-                  <select id="track-envelope-type">
-                    <option value="adsr">ADSR</option>
-                    <option value="ad">AD</option>
-                    <option value="looping">Looping</option>
-                    <option value="hold">HOLD</option>
-                  </select>
-                </label>
-                <label id="track-envelope-attack-field" class="compact-field">
-                  Attack (ms)
-                  <div class="slider-row">
-                    <input id="track-envelope-attack" type="range" min="0" max="2000" step="1" value="10" />
-                    <span id="track-envelope-attack-value" class="value-pill">10</span>
-                  </div>
-                </label>
-                <label id="track-envelope-decay-field" class="compact-field">
-                  Decay (ms)
-                  <div class="slider-row">
-                    <input id="track-envelope-decay" type="range" min="0" max="2000" step="1" value="80" />
-                    <span id="track-envelope-decay-value" class="value-pill">80</span>
-                  </div>
-                </label>
-                <label id="track-envelope-sustain-field" class="compact-field">
-                  Sustain (%)
-                  <div class="slider-row">
-                    <input id="track-envelope-sustain" type="range" min="0" max="100" step="1" value="70" />
-                    <span id="track-envelope-sustain-value" class="value-pill">70%</span>
-                  </div>
-                </label>
-                <label id="track-envelope-release-field" class="compact-field">
-                  Release (ms)
-                  <div class="slider-row">
-                    <input id="track-envelope-release" type="range" min="0" max="3000" step="1" value="120" />
-                    <span id="track-envelope-release-value" class="value-pill">120</span>
-                  </div>
-                </label>
-              </div>
-            </section>
-            <section class="control-group nested-control-group track-step-fill-group" aria-labelledby="track-step-fill-title">
-              <div class="control-group-head">
-                <h3 id="track-step-fill-title">Step Fill</h3>
-              </div>
-              <div class="control-grid track-settings-grid">
-                <label class="compact-field">
-                  Type
-                  <select id="track-step-fill-type">
-                    <option value="none">None</option>
-                    <option value="even">Even</option>
-                    <option value="random">Random</option>
-                  </select>
-                </label>
-                <label class="compact-field">
-                  Amount
-                  <div class="slider-row">
-                    <input id="track-step-fill-amount" type="range" min="0" max="100" value="0" />
-                    <span id="track-step-fill-amount-value" class="value-pill">0%</span>
-                  </div>
-                </label>
-              </div>
-            </section>
-            <section class="control-group nested-control-group track-step-fill-group" aria-labelledby="track-pitch-fill-title">
-              <div class="control-group-head">
-                <h3 id="track-pitch-fill-title">Pitch Fill</h3>
-              </div>
-              <div class="control-grid track-settings-grid">
-                <label class="compact-field">
-                  Type
-                  <select id="track-pitch-fill-type">
-                    <option value="single">Single</option>
-                    <option value="rising">Rising</option>
-                    <option value="falling">Falling</option>
-                    <option value="random-once">Random Once</option>
-                    <option value="random-every">Random Every</option>
-                  </select>
-                </label>
-                <label class="compact-field">
-                  From
-                  <select id="track-pitch-fill-from"></select>
-                </label>
-                <label class="compact-field" id="track-pitch-fill-to-field">
-                  To
-                  <select id="track-pitch-fill-to"></select>
-                </label>
-              </div>
-            </section>
-          </div>
-        </div>
       </section>
     </div>
 
