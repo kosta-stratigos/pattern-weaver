@@ -130,6 +130,7 @@ const ui = {
   trackEnvelopeRelease: document.querySelector("#track-envelope-release"),
   trackEnvelopeReleaseValue: document.querySelector("#track-envelope-release-value"),
   trackEnvelopeReleaseField: document.querySelector("#track-envelope-release-field"),
+  trackEnvelopeVisualizer: document.querySelector("#track-envelope-visualizer"),
   trackStepFillType: document.querySelector("#track-step-fill-type"),
   trackStepFillAmount: document.querySelector("#track-step-fill-amount"),
   trackStepFillAmountValue: document.querySelector("#track-step-fill-amount-value"),
@@ -420,10 +421,10 @@ function normalizePitchFillSettings(source = {}, fallback = createDefaultPitchFi
 function normalizeTrackEnvelope(source = {}, fallback = createDefaultTrackEnvelope()) {
   return {
     type: TRACK_ENVELOPE_TYPES.includes(source.type) ? source.type : fallback.type,
-    attack: Math.max(0, Math.min(2000, Number(source.attack) || fallback.attack)),
-    decay: Math.max(0, Math.min(2000, Number(source.decay) || fallback.decay)),
+    attack: Math.max(0, Math.min(2000, Number.isFinite(Number(source.attack)) ? Number(source.attack) : fallback.attack)),
+    decay: Math.max(0, Math.min(2000, Number.isFinite(Number(source.decay)) ? Number(source.decay) : fallback.decay)),
     sustain: Math.max(0, Math.min(100, Number.isFinite(Number(source.sustain)) ? Number(source.sustain) : fallback.sustain)),
-    release: Math.max(0, Math.min(3000, Number(source.release) || fallback.release)),
+    release: Math.max(0, Math.min(3000, Number.isFinite(Number(source.release)) ? Number(source.release) : fallback.release)),
   };
 }
 
@@ -2716,6 +2717,151 @@ function ensureSynthScopeAnimation() {
   state.synthScopeAnimationFrameId = window.requestAnimationFrame(drawSynthScopeFrame);
 }
 
+function buildTrackEnvelopeCycle(envelope) {
+  const envelopeType = getEnvelopeType(envelope);
+  if (envelopeType === "hold") {
+    return {
+      duration: 1,
+      points: [
+        { time: 0, value: 0 },
+        { time: 0, value: 1 },
+        { time: 1, value: 1 },
+        { time: 1, value: 0 },
+      ],
+    };
+  }
+
+  const attack = Math.max(0, envelope?.attack ?? 0);
+  const decay = Math.max(0, envelope?.decay ?? 0);
+  if (envelopeType === "ad") {
+    const hold = Math.max(140, Math.min(520, (attack + decay) * 0.25));
+    const duration = Math.max(1, attack + hold + decay);
+    return {
+      duration,
+      points: [
+        { time: 0, value: 0 },
+        { time: attack, value: 1 },
+        { time: attack + hold, value: 1 },
+        { time: duration, value: 0 },
+      ],
+    };
+  }
+
+  const release = Math.max(0, envelope?.release ?? 0);
+  const sustain = Math.max(0, Math.min(1, (envelope?.sustain ?? 100) / 100));
+  const sustainHold = Math.max(180, Math.min(640, (attack + decay + release) * 0.35));
+  const duration = Math.max(1, attack + decay + sustainHold + release);
+  return {
+    duration,
+    points: [
+      { time: 0, value: 0 },
+      { time: attack, value: 1 },
+      { time: attack + decay, value: sustain },
+      { time: attack + decay + sustainHold, value: sustain },
+      { time: duration, value: 0 },
+    ],
+  };
+}
+
+function buildTrackEnvelopeVisualizerPoints(envelope) {
+  const envelopeType = getEnvelopeType(envelope);
+  const cycle = buildTrackEnvelopeCycle(envelope);
+  if (envelopeType !== "looping") {
+    return { duration: cycle.duration, points: cycle.points };
+  }
+
+  const gap = Math.max(70, cycle.duration * 0.08);
+  return {
+    duration: cycle.duration * 2 + gap,
+    points: [
+      ...cycle.points,
+      { time: cycle.duration + gap, value: 0 },
+      ...cycle.points.map((point) => ({
+        time: point.time + cycle.duration + gap,
+        value: point.value,
+      })),
+    ],
+  };
+}
+
+function drawTrackEnvelopeVisualizer(envelope) {
+  if (!(ui.trackEnvelopeVisualizer instanceof HTMLCanvasElement)) return;
+  const context = ui.trackEnvelopeVisualizer.getContext("2d");
+  if (!context) return;
+
+  const { width, height } = ui.trackEnvelopeVisualizer;
+  const insetX = 13;
+  const insetTop = 12;
+  const insetBottom = 16;
+  const graphWidth = width - insetX * 2;
+  const graphHeight = height - insetTop - insetBottom;
+  const zeroY = insetTop + graphHeight;
+  const style = getComputedStyle(ui.trackEnvelopeVisualizer);
+  const trackColor = style.getPropertyValue("--track-color").trim() || "#4fc4b8";
+  const accentColor = style.getPropertyValue("--accent-3").trim() || "#ffaf5f";
+  const shape = buildTrackEnvelopeVisualizerPoints(envelope ?? createDefaultTrackEnvelope());
+  const points = shape.points;
+  const duration = Math.max(1, shape.duration);
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "rgba(255, 255, 255, 0.012)";
+  context.fillRect(0, 0, width, height);
+
+  context.strokeStyle = "rgba(126, 205, 185, 0.1)";
+  context.lineWidth = 1;
+  context.beginPath();
+  for (let marker = 0; marker <= 4; marker += 1) {
+    const y = insetTop + (graphHeight * marker) / 4;
+    context.moveTo(insetX, y);
+    context.lineTo(width - insetX, y);
+  }
+  for (let marker = 0; marker <= 6; marker += 1) {
+    const x = insetX + (graphWidth * marker) / 6;
+    context.moveTo(x, insetTop);
+    context.lineTo(x, zeroY);
+  }
+  context.stroke();
+
+  const toCanvasPoint = (point) => ({
+    x: insetX + (point.time / duration) * graphWidth,
+    y: insetTop + (1 - point.value) * graphHeight,
+  });
+
+  context.fillStyle = "rgba(79, 196, 184, 0.08)";
+  context.beginPath();
+  points.forEach((point, index) => {
+    const canvasPoint = toCanvasPoint(point);
+    if (index === 0) context.moveTo(canvasPoint.x, zeroY);
+    context.lineTo(canvasPoint.x, canvasPoint.y);
+  });
+  const lastPoint = toCanvasPoint(points[points.length - 1]);
+  context.lineTo(lastPoint.x, zeroY);
+  context.closePath();
+  context.fill();
+
+  context.strokeStyle = accentColor;
+  context.lineWidth = 1.25;
+  context.beginPath();
+  context.moveTo(insetX, zeroY);
+  context.lineTo(width - insetX, zeroY);
+  context.stroke();
+
+  context.strokeStyle = trackColor;
+  context.lineWidth = 2.5;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.shadowColor = "rgba(79, 196, 184, 0.35)";
+  context.shadowBlur = 8;
+  context.beginPath();
+  points.forEach((point, index) => {
+    const canvasPoint = toCanvasPoint(point);
+    if (index === 0) context.moveTo(canvasPoint.x, canvasPoint.y);
+    else context.lineTo(canvasPoint.x, canvasPoint.y);
+  });
+  context.stroke();
+  context.shadowBlur = 0;
+}
+
 function getTrackVoice(track) {
   return state.voices[Math.max(0, Math.min(TRACK_COUNT - 1, track.voiceIndex ?? 0))] ?? createVoiceConfig(1);
 }
@@ -3232,6 +3378,7 @@ function syncTrackSettingsOverlay() {
     ui.trackSettingsGroup.classList.add("is-track-active");
     applyTrackColor(ui.trackSettingsGroup, track.color);
   }
+  drawTrackEnvelopeVisualizer(activePattern.envelope);
 }
 
 function syncAddPatternOverlay() {
