@@ -299,11 +299,6 @@ h2 {
   padding: 12px;
 }
 
-.sequence-settings-group.is-track-active {
-  border-color: var(--track-color-strong);
-  background: var(--track-color-soft);
-}
-
 .pitch-lanes {
   gap: 5px;
   padding-top: 2px;
@@ -1136,6 +1131,13 @@ input[type="range"]::-moz-range-thumb {
   margin-bottom: 10px;
 }
 
+#track-settings-track-select {
+  border-color: var(--track-color-strong);
+  box-shadow:
+    inset 4px 0 0 var(--track-color),
+    inset 0 0 0 999px var(--track-color-soft);
+}
+
 .workspace-panel-composer {
   display: grid;
   gap: 14px;
@@ -1208,12 +1210,14 @@ input[type="range"]::-moz-range-thumb {
   min-height: 40px;
   border: 0;
   border-radius: 0;
-  padding: 0 24px 0 10px;
+  padding: 0 24px;
   background: transparent;
   color: var(--text);
   font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0.04em;
+  text-align: center;
+  text-align-last: center;
   text-transform: uppercase;
 }
 
@@ -1455,13 +1459,29 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .pattern-settings-stack > .span-2,
-.pattern-settings-stack > .control-group {
+.pattern-settings-stack > .control-group,
+.pattern-settings-fill-column {
   min-width: 0;
 }
 
 .pattern-settings-sequencer {
   grid-column: 1;
   grid-row: 1 / span 2;
+}
+
+.pattern-settings-fill-column {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  gap: 10px;
+  align-content: start;
+}
+
+.pattern-settings-fill-column > .pattern-settings-step-fill,
+.pattern-settings-fill-column > .pattern-settings-pitch-fill {
+  grid-column: auto;
+  grid-row: auto;
+  align-self: auto;
 }
 
 .pattern-settings-step-fill {
@@ -1891,6 +1911,7 @@ input[type="range"]::-moz-range-thumb {
   }
 
   .pattern-settings-sequencer,
+  .pattern-settings-fill-column,
   .pattern-settings-step-fill,
   .pattern-settings-pitch-fill,
   .pattern-settings-envelope {

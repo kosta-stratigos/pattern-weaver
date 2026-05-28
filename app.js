@@ -3320,6 +3320,7 @@ function syncTrackSettingsOverlay() {
     ui.trackSettingsTrackSelect.value = state.tracks.some((_, index) => String(index) === currentValue)
       ? String(track.id - 1)
       : String(track.id - 1);
+    applyTrackColor(ui.trackSettingsTrackSelect, track.color);
   }
   if (ui.trackPatternSelect instanceof HTMLSelectElement) {
     const currentValue = ui.trackPatternSelect.value;
@@ -3374,10 +3375,6 @@ function syncTrackSettingsOverlay() {
   ui.trackPitchFillTo.value = String(activePattern.pitchFill.to);
   ui.trackPitchFillTo.disabled = activePattern.pitchFill.type === "single";
   ui.trackPitchFillToField.classList.toggle("is-disabled", activePattern.pitchFill.type === "single");
-  if (ui.trackSettingsGroup instanceof HTMLElement) {
-    ui.trackSettingsGroup.classList.add("is-track-active");
-    applyTrackColor(ui.trackSettingsGroup, track.color);
-  }
   drawTrackEnvelopeVisualizer(activePattern.envelope);
 }
 

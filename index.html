@@ -82,7 +82,7 @@
         <section class="panel pane-workspace">
           <div id="workspace-tabs" class="workspace-tabs" role="tablist" aria-label="Workspace Sections">
             <button class="workspace-tab active" type="button" role="tab" aria-selected="true" data-workspace-tab="voices">Voices</button>
-            <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="patterns">Patterns</button>
+            <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="patterns">Pattern Settings</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="track-effects">Pattern Effects</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="pattern-switcher">Pattern Switcher</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="composer">Composer</button>
@@ -278,12 +278,6 @@
 
             <section class="workspace-panel workspace-panel-patterns" data-workspace-panel="patterns">
               <div class="workspace-patterns-shell">
-                <div class="panel-head workspace-patterns-head">
-                  <div class="panel-head-copy">
-                    <h2 id="track-settings-title">Pattern Settings</h2>
-                    <p id="track-settings-track"></p>
-                  </div>
-                </div>
                 <div id="track-settings-group" class="control-group sequence-settings-group track-settings-panel-group">
                   <div class="pattern-settings-toolbar">
                     <label class="compact-field">
@@ -342,53 +336,55 @@
                         </label>
                       </div>
                     </section>
-                    <section class="control-group nested-control-group track-step-fill-group pattern-settings-step-fill" aria-labelledby="track-step-fill-title">
-                      <div class="control-group-head">
-                        <h3 id="track-step-fill-title">Step Fill</h3>
-                      </div>
-                      <div class="control-grid track-settings-grid">
-                        <label class="compact-field">
-                          Type
-                          <select id="track-step-fill-type">
-                            <option value="none">None</option>
-                            <option value="even">Even</option>
-                            <option value="random">Random</option>
-                          </select>
-                        </label>
-                        <label class="compact-field">
-                          Amount
-                          <div class="slider-row">
-                            <input id="track-step-fill-amount" type="range" min="0" max="100" value="0" />
-                            <span id="track-step-fill-amount-value" class="value-pill">0%</span>
-                          </div>
-                        </label>
-                      </div>
-                    </section>
-                    <section class="control-group nested-control-group track-step-fill-group pattern-settings-pitch-fill" aria-labelledby="track-pitch-fill-title">
-                      <div class="control-group-head">
-                        <h3 id="track-pitch-fill-title">Pitch Fill</h3>
-                      </div>
-                      <div class="control-grid track-settings-grid">
-                        <label class="compact-field">
-                          Type
-                          <select id="track-pitch-fill-type">
-                            <option value="single">Single</option>
-                            <option value="rising">Rising</option>
-                            <option value="falling">Falling</option>
-                            <option value="random-once">Random Once</option>
-                            <option value="random-every">Random Every</option>
-                          </select>
-                        </label>
-                        <label class="compact-field">
-                          From
-                          <select id="track-pitch-fill-from"></select>
-                        </label>
-                        <label class="compact-field" id="track-pitch-fill-to-field">
-                          To
-                          <select id="track-pitch-fill-to"></select>
-                        </label>
-                      </div>
-                    </section>
+                    <div class="pattern-settings-fill-column">
+                      <section class="control-group nested-control-group track-step-fill-group pattern-settings-step-fill" aria-labelledby="track-step-fill-title">
+                        <div class="control-group-head">
+                          <h3 id="track-step-fill-title">Step Fill</h3>
+                        </div>
+                        <div class="control-grid track-settings-grid">
+                          <label class="compact-field">
+                            Type
+                            <select id="track-step-fill-type">
+                              <option value="none">None</option>
+                              <option value="even">Even</option>
+                              <option value="random">Random</option>
+                            </select>
+                          </label>
+                          <label class="compact-field">
+                            Amount
+                            <div class="slider-row">
+                              <input id="track-step-fill-amount" type="range" min="0" max="100" value="0" />
+                              <span id="track-step-fill-amount-value" class="value-pill">0%</span>
+                            </div>
+                          </label>
+                        </div>
+                      </section>
+                      <section class="control-group nested-control-group track-step-fill-group pattern-settings-pitch-fill" aria-labelledby="track-pitch-fill-title">
+                        <div class="control-group-head">
+                          <h3 id="track-pitch-fill-title">Pitch Fill</h3>
+                        </div>
+                        <div class="control-grid track-settings-grid">
+                          <label class="compact-field">
+                            Type
+                            <select id="track-pitch-fill-type">
+                              <option value="single">Single</option>
+                              <option value="rising">Rising</option>
+                              <option value="falling">Falling</option>
+                              <option value="random-once">Random Once</option>
+                              <option value="random-every">Random Every</option>
+                            </select>
+                          </label>
+                          <label class="compact-field">
+                            From
+                            <select id="track-pitch-fill-from"></select>
+                          </label>
+                          <label class="compact-field" id="track-pitch-fill-to-field">
+                            To
+                            <select id="track-pitch-fill-to"></select>
+                          </label>
+                        </div>
+                      </section>
+                    </div>
                     <section class="control-group nested-control-group track-step-fill-group pattern-settings-envelope" aria-labelledby="track-envelope-title">
                       <div class="control-group-head">
                         <h3 id="track-envelope-title">Envelope</h3>
