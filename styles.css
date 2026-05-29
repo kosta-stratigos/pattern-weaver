@@ -564,10 +564,27 @@ h2 {
 
 .voice-toolbar {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr)) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.38fr);
   gap: 10px;
-  align-items: end;
+  align-items: stretch;
   margin-bottom: 10px;
+}
+
+.voice-routing-group,
+.voice-operations-group {
+  margin: 0;
+  min-width: 0;
+}
+
+.voice-routing-group {
+  display: grid;
+  align-content: center;
+}
+
+.voice-routing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 10px;
 }
 
 #voice-select {
@@ -577,26 +594,44 @@ h2 {
     inset 0 0 0 999px var(--track-color-soft);
 }
 
-.voice-file-actions {
+.voice-operation-button-group {
   display: flex;
-  gap: 8px;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: stretch;
   min-width: 0;
 }
 
-.voice-file-actions button {
+.voice-operation-button-group button {
+  flex: 1;
   min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  border-color: rgba(79, 196, 184, 0.46);
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
   white-space: nowrap;
   padding-inline: 11px;
 }
 
-.voice-file-actions .material-symbols-sharp {
-  font-size: 1.05rem;
+.voice-operation-button-group button + button {
+  margin-left: -1px;
+}
+
+.voice-operation-button-group button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.voice-operation-button-group button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.voice-operation-button-group button:hover {
+  transform: none;
+  background: rgba(79, 196, 184, 0.08);
+  border-color: rgba(79, 196, 184, 0.72);
+  z-index: 1;
 }
 
 .control-grid {
@@ -1789,12 +1824,8 @@ input[type="range"]::-moz-range-thumb {
     grid-template-columns: 1fr;
   }
 
-  .voice-file-actions {
-    justify-content: stretch;
-  }
-
-  .voice-file-actions button {
-    flex: 1;
+  .voice-routing-grid {
+    grid-template-columns: 1fr;
   }
 
   .pitch-lane {

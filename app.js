@@ -15,6 +15,7 @@ const ui = {
   sliceCount: document.querySelector("#slice-count"),
   sliceCountValue: document.querySelector("#slice-count-value"),
   voiceSelect: document.querySelector("#voice-select"),
+  voiceName: document.querySelector("#voice-name"),
   voiceSave: document.querySelector("#voice-save"),
   voiceLoad: document.querySelector("#voice-load"),
   voiceLoadInput: document.querySelector("#voice-load-input"),
@@ -1969,7 +1970,7 @@ function normalizeVoice(index, source = {}) {
   const fallback = createVoiceConfig(index + 1);
   return {
     ...fallback,
-    name: typeof source.name === "string" ? source.name : fallback.name,
+    name: normalizeVoiceName(source.name, fallback.name),
     mode: ["synth", "chop", "granular"].includes(source.mode) ? source.mode : fallback.mode,
     reverse: Boolean(source.reverse),
     grainLocation: ["fixed", "sequential", "sweep", "random"].includes(source.grainLocation) ? source.grainLocation : fallback.grainLocation,
@@ -4791,6 +4792,11 @@ function slugifyFileName(value) {
   return slug || "voice";
 }
 
+function normalizeVoiceName(value, fallback) {
+  const trimmed = String(value ?? "").trim();
+  return trimmed ? trimmed.slice(0, 48) : fallback;
+}
+
 function downloadJsonFile(payload, fileName) {
   const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -4828,6 +4834,15 @@ function saveSelectedVoiceFile() {
   setDiagnostics(`${formatVoiceName(voice, state.selectedVoiceIndex)} saved as JSON.`, "ok");
 }
 
+function nameSelectedVoice() {
+  const voice = getSelectedVoice();
+  const currentName = formatVoiceName(voice, state.selectedVoiceIndex);
+  const nextName = window.prompt("Voice name", currentName);
+  if (nextName === null) return;
+  updateSelectedVoice({ name: normalizeVoiceName(nextName, currentName) });
+  setDiagnostics(`${formatVoiceName(getSelectedVoice(), state.selectedVoiceIndex)} named.`, "ok");
+}
+
 async function loadSelectedVoiceFile(file) {
   if (!file) return;
   try {
@@ -4837,7 +4852,7 @@ async function loadSelectedVoiceFile(file) {
     const target = getSelectedVoice();
     const importedVoice = normalizeVoice(state.selectedVoiceIndex, source);
     importedVoice.id = target.id;
-    importedVoice.name = target.name;
+    importedVoice.name = normalizeVoiceName(source.name, target.name);
     updateSelectedVoice(importedVoice);
     setDiagnostics(`${formatVoiceName(importedVoice, state.selectedVoiceIndex)} loaded from JSON.`, "ok");
   } catch (error) {
@@ -4954,6 +4969,7 @@ ui.voiceSelect.addEventListener("change", () => {
   drawWaveform();
   writeStoredSession();
 });
+ui.voiceName.addEventListener("click", nameSelectedVoice);
 ui.voiceSave.addEventListener("click", saveSelectedVoiceFile);
 ui.voiceLoad.addEventListener("click", () => ui.voiceLoadInput.click());
 ui.voiceLoadInput.addEventListener("change", async (event) => {

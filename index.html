@@ -90,29 +90,33 @@
           <div class="workspace-panels">
             <section class="workspace-panel workspace-panel-voices is-active" data-workspace-panel="voices">
               <div class="voice-toolbar">
-                <label class="compact-field voice-select-control">
-                  Select Voice
-                  <select id="voice-select"></select>
-                </label>
-                <label class="compact-field voice-type-control">
-                  Voice Type
-                  <select id="mode">
-                    <option value="synth">Synth</option>
-                    <option value="granular">Grain</option>
-                    <option value="chop">Chop</option>
-                  </select>
-                </label>
-                <div class="voice-file-actions" aria-label="Voice file actions">
-                  <button id="voice-save" type="button" title="Save selected voice">
-                    <span class="material-symbols-sharp" aria-hidden="true">download</span>
-                    <span>Save Voice</span>
-                  </button>
-                  <button id="voice-load" type="button" title="Load voice from JSON">
-                    <span class="material-symbols-sharp" aria-hidden="true">upload_file</span>
-                    <span>Load Voice</span>
-                  </button>
+                <section class="control-group nested-control-group voice-routing-group" aria-label="Voice selection">
+                  <div class="voice-routing-grid">
+                    <label class="compact-field voice-select-control">
+                      Select Voice
+                      <select id="voice-select"></select>
+                    </label>
+                    <label class="compact-field voice-type-control">
+                      Voice Type
+                      <select id="mode">
+                        <option value="synth">Synth</option>
+                        <option value="granular">Grain</option>
+                        <option value="chop">Chop</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+                <section class="control-group nested-control-group voice-operations-group" aria-labelledby="voice-operations-title">
+                  <div class="control-group-head">
+                    <h3 id="voice-operations-title">Voice Operations</h3>
+                  </div>
+                  <div class="voice-operation-button-group" role="group" aria-label="Voice operations">
+                    <button id="voice-name" type="button">Name</button>
+                    <button id="voice-save" type="button">Save</button>
+                    <button id="voice-load" type="button">Load</button>
+                  </div>
                   <input id="voice-load-input" type="file" accept=".json,application/json" hidden />
-                </div>
+                </section>
               </div>
               <div class="control-stack track-settings-stack">
                 <section id="sample-voice-settings-group" class="control-group sample-voice-settings-group" aria-labelledby="sample-voice-group-title">
