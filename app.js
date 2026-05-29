@@ -14,7 +14,7 @@ const ui = {
   regionEnd: document.querySelector("#region-end"),
   sliceCount: document.querySelector("#slice-count"),
   sliceCountValue: document.querySelector("#slice-count-value"),
-  trackSelector: document.querySelector("#track-selector"),
+  voiceSelect: document.querySelector("#voice-select"),
   sampleVoiceSettingsGroup: document.querySelector("#sample-voice-settings-group"),
   sampleSettingsGroup: document.querySelector("#sample-settings-group"),
   voicePlaybackSettingsGroup: document.querySelector("#voice-playback-settings-group"),
@@ -54,11 +54,9 @@ const ui = {
   synthWave: document.querySelector("#synth-wave"),
   synthWaveShape: document.querySelector("#synth-wave-shape"),
   synthWaveShapeValue: document.querySelector("#synth-wave-shape-value"),
-  synthTuneField: document.querySelector("#synth-tune-field"),
-  synthTune: document.querySelector("#synth-tune"),
   synthLevel: document.querySelector("#synth-level"),
   synthLevelValue: document.querySelector("#synth-level-value"),
-  synthNoiseMixKnob: document.querySelector("#synth-noise-mix-knob"),
+  synthNoiseMix: document.querySelector("#synth-noise-mix"),
   synthNoiseMixValue: document.querySelector("#synth-noise-mix-value"),
   synthFold: document.querySelector("#synth-fold"),
   synthFoldValue: document.querySelector("#synth-fold-value"),
@@ -2907,16 +2905,6 @@ function getTrackPlaybackSettings(track) {
   };
 }
 
-function populateSynthTuneOptions() {
-  if (!(ui.synthTune instanceof HTMLSelectElement) || ui.synthTune.options.length) return;
-  for (let midiNote = 24; midiNote <= 84; midiNote += 1) {
-    const option = document.createElement("option");
-    option.value = String(midiNote);
-    option.textContent = formatMidiNote(midiNote);
-    ui.synthTune.append(option);
-  }
-}
-
 function renderPatternVoiceOptions() {
   if (!ui.patternVoiceSelect) return;
   ui.patternVoiceSelect.innerHTML = "";
@@ -4033,28 +4021,16 @@ function updateCurrentStep(activeStep = -1) {
 }
 
 function renderTrackSelector() {
-  ui.trackSelector.innerHTML = "";
+  if (!(ui.voiceSelect instanceof HTMLSelectElement)) return;
+  ui.voiceSelect.innerHTML = "";
   state.voices.forEach((voice, index) => {
-    const chip = document.createElement("div");
-    chip.className = `track-chip${index === state.selectedVoiceIndex ? " active" : ""}`;
-    applyTrackColor(chip, TRACK_COLORS[index % TRACK_COLORS.length]);
-
-    const selectButton = document.createElement("button");
-    selectButton.className = "track-chip-main";
-    selectButton.innerHTML = `<span class="track-chip-name">${formatVoiceName(voice, index)}</span><span class="track-chip-mode">${formatModeLabel(voice.mode)}</span>`;
-    selectButton.addEventListener("click", () => {
-      state.selectedVoiceIndex = index;
-      syncUi();
-      renderTrackSelector();
-      renderEffectsMatrix();
-      renderMixer();
-      renderPattern();
-      drawWaveform();
-      writeStoredSession();
-    });
-    chip.append(selectButton);
-    ui.trackSelector.append(chip);
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${formatVoiceName(voice, index)} - ${formatModeLabel(voice.mode)}`;
+    ui.voiceSelect.append(option);
   });
+  ui.voiceSelect.value = String(state.selectedVoiceIndex);
+  applyTrackColor(ui.voiceSelect, TRACK_COLORS[state.selectedVoiceIndex % TRACK_COLORS.length]);
 }
 
 function renderMixer() {
@@ -4665,7 +4641,6 @@ function renderPattern(activeStep = state.currentTransportStep) {
 function syncUi() {
   const track = getSelectedTrack();
   const voice = getSelectedVoice();
-  populateSynthTuneOptions();
   renderPatternVoiceOptions();
   ui.sliceCountValue.textContent = String(voice.sliceCount);
   ui.mode.value = voice.mode;
@@ -4689,10 +4664,9 @@ function syncUi() {
   ui.synthWave.value = voice.synthWave;
   ui.synthWaveShape.value = String(voice.synthWaveShape);
   ui.synthWaveShapeValue.textContent = `${Math.round(voice.synthWaveShape)}%`;
-  ui.synthTune.value = String(voice.synthTuneMidi);
   ui.synthLevel.value = String(voice.synthLevel);
   ui.synthLevelValue.textContent = `${Math.round(voice.synthLevel)}%`;
-  ui.synthNoiseMixKnob.style.setProperty("--rotary-angle", `${getRotaryAngleFromPercent(voice.synthNoiseMix)}deg`);
+  ui.synthNoiseMix.value = String(voice.synthNoiseMix);
   ui.synthNoiseMixValue.textContent = `${Math.round(voice.synthNoiseMix)}%`;
   ui.synthFold.value = String(voice.synthFoldAmount);
   ui.synthFoldValue.textContent = `${Math.round(voice.synthFoldAmount)}%`;
@@ -4703,8 +4677,6 @@ function syncUi() {
   ui.synthFilterQValue.textContent = voice.synthFilterQ.toFixed(1);
   ui.pitch.disabled = true;
   ui.voicePitchField.classList.add("is-disabled");
-  ui.synthTune.disabled = true;
-  ui.synthTuneField.classList.add("is-disabled");
   const synthMode = voice.mode === "synth";
   const sampleVoiceModeLabel = voice.mode === "chop" ? "Chop" : "Grain";
   const sampleVoiceTitle = document.querySelector("#sample-voice-group-title");
@@ -4793,46 +4765,6 @@ function updateSelectedVoice(patch) {
   renderPattern();
   drawWaveform();
   writeStoredSession();
-}
-
-function bindSynthNoiseMixKnob() {
-  if (!(ui.synthNoiseMixKnob instanceof HTMLElement)) return;
-  ui.synthNoiseMixKnob.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    const voice = getSelectedVoice();
-    const startY = event.clientY;
-    const startMix = clampNoiseMix(voice.synthNoiseMix, 0);
-
-    const handleMove = (moveEvent) => {
-      moveEvent.preventDefault();
-      const delta = (startY - moveEvent.clientY) / 1.2;
-      const nextMix = clampNoiseMix(startMix + delta, startMix);
-      voice.synthNoiseMix = nextMix;
-      ui.synthNoiseMixKnob.style.setProperty("--rotary-angle", `${getRotaryAngleFromPercent(nextMix)}deg`);
-      ui.synthNoiseMixValue.textContent = `${Math.round(nextMix)}%`;
-      state.tracks.forEach((track, index) => {
-        if (track.voiceIndex !== state.selectedVoiceIndex) return;
-        state.playback?.updateTrackBus(index, track);
-      });
-      writeStoredSession();
-    };
-
-    const handleEnd = () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleEnd);
-      window.removeEventListener("pointercancel", handleEnd);
-      syncUi();
-      renderTrackSelector();
-      renderEffectsMatrix();
-      renderMixer();
-      renderPattern();
-      drawWaveform();
-    };
-
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleEnd);
-    window.addEventListener("pointercancel", handleEnd);
-  });
 }
 
 function updateTrackFilter(trackIndex, patch) {
@@ -4934,6 +4866,16 @@ ui.sliceCount.addEventListener("input", () => {
   updateSelectedVoice({ sliceCount: Number(ui.sliceCount.value) });
 });
 
+ui.voiceSelect.addEventListener("change", () => {
+  state.selectedVoiceIndex = Math.max(0, Math.min(TRACK_COUNT - 1, Number(ui.voiceSelect.value) || 0));
+  syncUi();
+  renderTrackSelector();
+  renderEffectsMatrix();
+  renderMixer();
+  renderPattern();
+  drawWaveform();
+  writeStoredSession();
+});
 ui.mode.addEventListener("change", () => updateSelectedVoice({ mode: ui.mode.value }));
 ui.grainLocation.addEventListener("change", () => updateSelectedVoice({ grainLocation: ui.grainLocation.value }));
 ui.voicePlacement.addEventListener("input", () => updateSelectedVoice({ voicePlacement: Number(ui.voicePlacement.value) }));
@@ -5127,7 +5069,7 @@ ui.chopGate.addEventListener("input", () => updateSelectedVoice({ chopGate: Numb
 ui.reverse.addEventListener("change", () => updateSelectedVoice({ reverse: ui.reverse.checked }));
 ui.synthWave.addEventListener("change", () => updateSelectedVoice({ synthWave: ui.synthWave.value }));
 ui.synthWaveShape.addEventListener("input", () => updateSelectedVoice({ synthWaveShape: Number(ui.synthWaveShape.value) }));
-ui.synthTune.addEventListener("change", () => updateSelectedVoice({ synthTuneMidi: Number(ui.synthTune.value) }));
+ui.synthNoiseMix.addEventListener("input", () => updateSelectedVoice({ synthNoiseMix: Number(ui.synthNoiseMix.value) }));
 ui.synthLevel.addEventListener("input", () => updateSelectedVoice({ synthLevel: Number(ui.synthLevel.value) }));
 ui.synthFold.addEventListener("input", () => updateSelectedVoice({ synthFoldAmount: Number(ui.synthFold.value) }));
 ui.synthFilterType.addEventListener("change", () => updateSelectedVoice({ synthFilterType: ui.synthFilterType.value }));
@@ -5201,9 +5143,6 @@ ui.sampleBrowserOverlay.addEventListener("click", (event) => {
   if (!(event.target instanceof HTMLElement)) return;
   if (event.target.dataset.sampleOverlayClose === "true") closeSampleBrowser();
 });
-
-bindSynthNoiseMixKnob();
-
 ui.waveformOverview.addEventListener("pointerdown", (event) => {
   const pointerState = getOverviewPointerState(event.clientX);
   if (!pointerState?.insideRegion) return;

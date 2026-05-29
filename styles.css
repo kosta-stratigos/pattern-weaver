@@ -562,55 +562,18 @@ h2 {
   transform: rotate(var(--pan-rotation, 0deg));
 }
 
-.track-selector {
+.voice-toolbar {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   margin-bottom: 10px;
 }
 
-.track-chip {
-  border-radius: var(--pane-radius);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 6px 8px;
-  display: block;
-  align-items: center;
-}
-
-.track-chip.active {
-  background: linear-gradient(135deg, var(--track-color-soft), rgba(255, 255, 255, 0.06));
+#voice-select {
   border-color: var(--track-color-strong);
-}
-
-.track-chip-main {
-  display: grid;
-  gap: 1px;
-  text-align: left;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  border-radius: 0;
-  min-width: 0;
-  cursor: pointer;
-}
-
-.track-chip-name {
-  display: block;
-  color: var(--text);
-  font-size: 0.78rem;
-  font-weight: 600;
-  font-family: var(--font-display);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.track-chip-mode {
-  display: block;
-  color: var(--muted);
-  font-size: 0.68rem;
+  box-shadow:
+    inset 4px 0 0 var(--track-color),
+    inset 0 0 0 999px var(--track-color-soft);
 }
 
 .control-grid {
@@ -629,16 +592,11 @@ h2 {
 
 .synth-settings-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.85fr);
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
   gap: 10px;
   align-items: start;
 }
 
-.synth-control-grid {
-  grid-template-columns: 1fr;
-}
-
-.voice-type-control,
 .synth-settings-group,
 .sample-voice-settings-group {
   margin-bottom: 10px;
@@ -653,58 +611,11 @@ h2 {
   margin: 0;
 }
 
-.rotary-row {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 10px;
-  align-items: center;
-  justify-content: start;
-}
-
-.rotary-field {
-  display: grid;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 600;
-  align-content: start;
-}
-
-.voice-rotary {
-  position: relative;
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.14), transparent 32%),
-    rgba(255, 255, 255, 0.05);
-  cursor: ns-resize;
-  touch-action: none;
-}
-
-.voice-rotary:hover {
-  transform: none;
-}
-
-.voice-rotary::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 4px;
-  width: 2px;
-  height: 8px;
-  margin-left: -1px;
-  border-radius: 999px;
-  background: var(--text);
-  transform-origin: 50% 10px;
-  transform: rotate(var(--rotary-angle, -135deg));
-}
-
+.synth-wave-group,
+.synth-filter-group,
 .synth-visual-group {
   align-content: start;
+  min-width: 0;
 }
 
 .synth-waveform-scope {
@@ -1851,8 +1762,8 @@ input[type="range"]::-moz-range-thumb {
     grid-template-columns: 1fr;
   }
 
-  .track-selector {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .voice-toolbar {
+    grid-template-columns: 1fr;
   }
 
   .pitch-lane {
