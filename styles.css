@@ -564,8 +564,9 @@ h2 {
 
 .voice-toolbar {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) auto;
   gap: 10px;
+  align-items: end;
   margin-bottom: 10px;
 }
 
@@ -574,6 +575,28 @@ h2 {
   box-shadow:
     inset 4px 0 0 var(--track-color),
     inset 0 0 0 999px var(--track-color-soft);
+}
+
+.voice-file-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.voice-file-actions button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding-inline: 11px;
+}
+
+.voice-file-actions .material-symbols-sharp {
+  font-size: 1.05rem;
 }
 
 .control-grid {
@@ -1764,6 +1787,14 @@ input[type="range"]::-moz-range-thumb {
 
   .voice-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .voice-file-actions {
+    justify-content: stretch;
+  }
+
+  .voice-file-actions button {
+    flex: 1;
   }
 
   .pitch-lane {

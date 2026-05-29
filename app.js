@@ -15,6 +15,9 @@ const ui = {
   sliceCount: document.querySelector("#slice-count"),
   sliceCountValue: document.querySelector("#slice-count-value"),
   voiceSelect: document.querySelector("#voice-select"),
+  voiceSave: document.querySelector("#voice-save"),
+  voiceLoad: document.querySelector("#voice-load"),
+  voiceLoadInput: document.querySelector("#voice-load-input"),
   sampleVoiceSettingsGroup: document.querySelector("#sample-voice-settings-group"),
   sampleSettingsGroup: document.querySelector("#sample-settings-group"),
   voicePlaybackSettingsGroup: document.querySelector("#voice-playback-settings-group"),
@@ -189,6 +192,8 @@ const SCALE_OPTIONS = [
 ];
 const D_ROOT_PITCH_CLASS = 0;
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const VOICE_FILE_TYPE = "pattern-weaver.voice";
+const VOICE_FILE_VERSION = 1;
 
 function updateRangeFill(input) {
   if (!(input instanceof HTMLInputElement) || input.type !== "range") return;
@@ -224,6 +229,12 @@ function clampFilterQ(value) {
 
 function clampPan(value) {
   return Math.max(-1, Math.min(1, Number(value) || 0));
+}
+
+function clampNumber(value, min, max, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
 }
 
 function clampIntegerText(value, fallback = 0) {
@@ -1927,6 +1938,33 @@ function normalizeTrack(index, source = {}) {
   };
 }
 
+function serializeVoice(voice) {
+  return {
+    id: voice.id,
+    name: voice.name,
+    mode: voice.mode,
+    reverse: voice.reverse,
+    grainLocation: voice.grainLocation,
+    voicePlacement: voice.voicePlacement,
+    voicePlaybackMode: voice.voicePlaybackMode,
+    grainSize: voice.grainSize,
+    grainDensity: voice.grainDensity,
+    spray: voice.spray,
+    pitch: voice.pitch,
+    chopGate: voice.chopGate,
+    sliceCount: voice.sliceCount,
+    synthWave: voice.synthWave,
+    synthWaveShape: voice.synthWaveShape,
+    synthTuneMidi: voice.synthTuneMidi,
+    synthLevel: voice.synthLevel,
+    synthNoiseMix: voice.synthNoiseMix,
+    synthFoldAmount: voice.synthFoldAmount,
+    synthFilterType: voice.synthFilterType,
+    synthFilterFrequency: voice.synthFilterFrequency,
+    synthFilterQ: voice.synthFilterQ,
+  };
+}
+
 function normalizeVoice(index, source = {}) {
   const fallback = createVoiceConfig(index + 1);
   return {
@@ -1935,14 +1973,14 @@ function normalizeVoice(index, source = {}) {
     mode: ["synth", "chop", "granular"].includes(source.mode) ? source.mode : fallback.mode,
     reverse: Boolean(source.reverse),
     grainLocation: ["fixed", "sequential", "sweep", "random"].includes(source.grainLocation) ? source.grainLocation : fallback.grainLocation,
-    voicePlacement: Math.max(0, Math.min(100, Number(source.voicePlacement) || fallback.voicePlacement)),
+    voicePlacement: clampNumber(source.voicePlacement, 0, 100, fallback.voicePlacement),
     voicePlaybackMode: ["one-shot", "loop", "smooth-loop"].includes(source.voicePlaybackMode) ? source.voicePlaybackMode : fallback.voicePlaybackMode,
-    grainSize: Math.max(20, Math.min(350, Number(source.grainSize) || fallback.grainSize)),
-    grainDensity: Math.max(2, Math.min(40, Number(source.grainDensity) || fallback.grainDensity)),
-    spray: Math.max(0, Math.min(100, Number(source.spray) || fallback.spray)),
-    pitch: Math.max(-24, Math.min(24, Number(source.pitch) || fallback.pitch)),
-    chopGate: Math.max(10, Math.min(100, Number(source.chopGate) || fallback.chopGate)),
-    sliceCount: Math.max(2, Math.min(16, Number(source.sliceCount) || fallback.sliceCount)),
+    grainSize: clampNumber(source.grainSize, 20, 350, fallback.grainSize),
+    grainDensity: clampNumber(source.grainDensity, 2, 40, fallback.grainDensity),
+    spray: clampNumber(source.spray, 0, 100, fallback.spray),
+    pitch: clampNumber(source.pitch, -24, 24, fallback.pitch),
+    chopGate: clampNumber(source.chopGate, 10, 100, fallback.chopGate),
+    sliceCount: clampNumber(source.sliceCount, 2, 16, fallback.sliceCount),
     synthWave: SYNTH_WAVES.includes(source.synthWave) ? source.synthWave : fallback.synthWave,
     synthWaveShape: clampSynthWaveShape(source.synthWaveShape ?? fallback.synthWaveShape, fallback.synthWaveShape),
     synthTuneMidi: clampMidiNote(source.synthTuneMidi ?? fallback.synthTuneMidi, fallback.synthTuneMidi),
@@ -1975,30 +2013,7 @@ function writeStoredSession() {
       regionStart: state.sample.regionStart,
       regionEnd: state.sample.regionEnd,
     },
-    voices: state.voices.map((voice) => ({
-      id: voice.id,
-      name: voice.name,
-      mode: voice.mode,
-      reverse: voice.reverse,
-      grainLocation: voice.grainLocation,
-      voicePlacement: voice.voicePlacement,
-      voicePlaybackMode: voice.voicePlaybackMode,
-      grainSize: voice.grainSize,
-      grainDensity: voice.grainDensity,
-      spray: voice.spray,
-      pitch: voice.pitch,
-      chopGate: voice.chopGate,
-      sliceCount: voice.sliceCount,
-      synthWave: voice.synthWave,
-      synthWaveShape: voice.synthWaveShape,
-      synthTuneMidi: voice.synthTuneMidi,
-      synthLevel: voice.synthLevel,
-      synthNoiseMix: voice.synthNoiseMix,
-      synthFoldAmount: voice.synthFoldAmount,
-      synthFilterType: voice.synthFilterType,
-      synthFilterFrequency: voice.synthFilterFrequency,
-      synthFilterQ: voice.synthFilterQ,
-    })),
+    voices: state.voices.map(serializeVoice),
     tracks: state.tracks.map((track) => ({
       id: track.id,
       color: track.color,
@@ -4767,6 +4782,69 @@ function updateSelectedVoice(patch) {
   writeStoredSession();
 }
 
+function slugifyFileName(value) {
+  const slug = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "voice";
+}
+
+function downloadJsonFile(payload, fileName) {
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function createVoiceFilePayload(voice) {
+  return {
+    type: VOICE_FILE_TYPE,
+    version: VOICE_FILE_VERSION,
+    savedAt: new Date().toISOString(),
+    voice: serializeVoice(voice),
+  };
+}
+
+function getVoiceFileSource(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  if (payload.type === VOICE_FILE_TYPE && payload.voice && typeof payload.voice === "object") return payload.voice;
+  if (payload.voice && typeof payload.voice === "object") return payload.voice;
+  if ("mode" in payload || "synthWave" in payload || "grainSize" in payload) return payload;
+  return null;
+}
+
+function saveSelectedVoiceFile() {
+  const voice = getSelectedVoice();
+  const payload = createVoiceFilePayload(voice);
+  const fileName = `pattern-weaver-${slugifyFileName(formatVoiceName(voice, state.selectedVoiceIndex))}.json`;
+  downloadJsonFile(payload, fileName);
+  setDiagnostics(`${formatVoiceName(voice, state.selectedVoiceIndex)} saved as JSON.`, "ok");
+}
+
+async function loadSelectedVoiceFile(file) {
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const source = getVoiceFileSource(parsed);
+    if (!source) throw new Error("Unsupported voice file");
+    const target = getSelectedVoice();
+    const importedVoice = normalizeVoice(state.selectedVoiceIndex, source);
+    importedVoice.id = target.id;
+    importedVoice.name = target.name;
+    updateSelectedVoice(importedVoice);
+    setDiagnostics(`${formatVoiceName(importedVoice, state.selectedVoiceIndex)} loaded from JSON.`, "ok");
+  } catch (error) {
+    setDiagnostics("voice file could not be loaded.", "error");
+  }
+}
+
 function updateTrackFilter(trackIndex, patch) {
   const track = state.tracks[trackIndex];
   if (!track) return;
@@ -4875,6 +4953,13 @@ ui.voiceSelect.addEventListener("change", () => {
   renderPattern();
   drawWaveform();
   writeStoredSession();
+});
+ui.voiceSave.addEventListener("click", saveSelectedVoiceFile);
+ui.voiceLoad.addEventListener("click", () => ui.voiceLoadInput.click());
+ui.voiceLoadInput.addEventListener("change", async (event) => {
+  const [file] = event.target.files ?? [];
+  await loadSelectedVoiceFile(file);
+  event.target.value = "";
 });
 ui.mode.addEventListener("change", () => updateSelectedVoice({ mode: ui.mode.value }));
 ui.grainLocation.addEventListener("change", () => updateSelectedVoice({ grainLocation: ui.grainLocation.value }));

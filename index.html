@@ -102,6 +102,17 @@
                     <option value="chop">Chop</option>
                   </select>
                 </label>
+                <div class="voice-file-actions" aria-label="Voice file actions">
+                  <button id="voice-save" type="button" title="Save selected voice">
+                    <span class="material-symbols-sharp" aria-hidden="true">download</span>
+                    <span>Save Voice</span>
+                  </button>
+                  <button id="voice-load" type="button" title="Load voice from JSON">
+                    <span class="material-symbols-sharp" aria-hidden="true">upload_file</span>
+                    <span>Load Voice</span>
+                  </button>
+                  <input id="voice-load-input" type="file" accept=".json,application/json" hidden />
+                </div>
               </div>
               <div class="control-stack track-settings-stack">
                 <section id="sample-voice-settings-group" class="control-group sample-voice-settings-group" aria-labelledby="sample-voice-group-title">
