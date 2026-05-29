@@ -1371,6 +1371,10 @@ input[type="range"]::-moz-range-thumb {
   width: min(520px, calc(100vw - 32px));
 }
 
+.overlay-panel.voice-name-panel {
+  width: min(420px, calc(100vw - 32px));
+}
+
 .pattern-switcher-add {
   font-size: 1.2rem;
   font-weight: 400;

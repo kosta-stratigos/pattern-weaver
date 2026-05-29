@@ -35,6 +35,12 @@ const ui = {
   addPatternSourceSelect: document.querySelector("#add-pattern-source-select"),
   addPatternCopyAction: document.querySelector("#add-pattern-copy-action"),
   addPatternCreateAction: document.querySelector("#add-pattern-create-action"),
+  voiceNameOverlay: document.querySelector("#voice-name-overlay"),
+  voiceNameTitle: document.querySelector("#voice-name-title"),
+  voiceNameClose: document.querySelector("#voice-name-close"),
+  voiceNameForm: document.querySelector("#voice-name-form"),
+  voiceNameInput: document.querySelector("#voice-name-input"),
+  voiceNameCancel: document.querySelector("#voice-name-cancel"),
   trackPatternSelect: document.querySelector("#track-pattern-select"),
   patternVoiceSelect: document.querySelector("#pattern-voice-select"),
   mode: document.querySelector("#mode"),
@@ -1585,6 +1591,10 @@ const state = {
     open: false,
     trackIndex: 0,
     patternIndex: 0,
+  },
+  voiceNameOverlay: {
+    open: false,
+    voiceIndex: 0,
   },
   pitchStepSelection: {
     trackIndex: null,
@@ -3421,6 +3431,25 @@ function syncAddPatternOverlay() {
   }
 }
 
+function syncVoiceNameOverlay() {
+  if (!ui.voiceNameOverlay) return;
+  const isOpen = state.voiceNameOverlay.open;
+  ui.voiceNameOverlay.classList.toggle("is-hidden", !isOpen);
+  ui.voiceNameOverlay.setAttribute("aria-hidden", String(!isOpen));
+  if (!isOpen) return;
+
+  const voiceIndex = Math.max(0, Math.min(TRACK_COUNT - 1, state.voiceNameOverlay.voiceIndex ?? state.selectedVoiceIndex));
+  const voice = state.voices[voiceIndex] ?? getSelectedVoice();
+  if (ui.voiceNameTitle) ui.voiceNameTitle.textContent = `Name ${formatVoiceName(voice, voiceIndex)}`;
+  if (ui.voiceNameInput instanceof HTMLInputElement) {
+    ui.voiceNameInput.value = formatVoiceName(voice, voiceIndex);
+    window.requestAnimationFrame(() => {
+      ui.voiceNameInput.focus();
+      ui.voiceNameInput.select();
+    });
+  }
+}
+
 function openTrackSettingsOverlay(trackIndex) {
   state.selectedTrackIndex = trackIndex;
   state.workspaceTab = "patterns";
@@ -3469,6 +3498,33 @@ function openAddPatternOverlay(trackIndex, patternIndex) {
 function closeAddPatternOverlay() {
   state.addPatternOverlay.open = false;
   syncAddPatternOverlay();
+}
+
+function openVoiceNameOverlay() {
+  state.voiceNameOverlay = {
+    open: true,
+    voiceIndex: state.selectedVoiceIndex,
+  };
+  syncVoiceNameOverlay();
+}
+
+function closeVoiceNameOverlay() {
+  state.voiceNameOverlay.open = false;
+  syncVoiceNameOverlay();
+}
+
+function submitVoiceNameOverlay() {
+  const voiceIndex = Math.max(0, Math.min(TRACK_COUNT - 1, state.voiceNameOverlay.voiceIndex ?? state.selectedVoiceIndex));
+  const voice = state.voices[voiceIndex];
+  if (!voice || !(ui.voiceNameInput instanceof HTMLInputElement)) {
+    closeVoiceNameOverlay();
+    return;
+  }
+  const fallbackName = formatVoiceName(voice, voiceIndex);
+  state.selectedVoiceIndex = voiceIndex;
+  updateSelectedVoice({ name: normalizeVoiceName(ui.voiceNameInput.value, fallbackName) });
+  closeVoiceNameOverlay();
+  setDiagnostics(`${formatVoiceName(getSelectedVoice(), state.selectedVoiceIndex)} named.`, "ok");
 }
 
 function createDefaultPatternForTrack(trackIndex, patternIndex) {
@@ -4835,12 +4891,7 @@ function saveSelectedVoiceFile() {
 }
 
 function nameSelectedVoice() {
-  const voice = getSelectedVoice();
-  const currentName = formatVoiceName(voice, state.selectedVoiceIndex);
-  const nextName = window.prompt("Voice name", currentName);
-  if (nextName === null) return;
-  updateSelectedVoice({ name: normalizeVoiceName(nextName, currentName) });
-  setDiagnostics(`${formatVoiceName(getSelectedVoice(), state.selectedVoiceIndex)} named.`, "ok");
+  openVoiceNameOverlay();
 }
 
 async function loadSelectedVoiceFile(file) {
@@ -5146,6 +5197,16 @@ ui.addPatternCreateAction.addEventListener("click", () => {
   activateTrackPattern(trackIndex, targetPatternIndex, { selectTrack: true });
   openTrackSettingsOverlay(trackIndex);
 });
+ui.voiceNameClose.addEventListener("click", () => closeVoiceNameOverlay());
+ui.voiceNameCancel.addEventListener("click", () => closeVoiceNameOverlay());
+ui.voiceNameOverlay.addEventListener("click", (event) => {
+  if (!(event.target instanceof HTMLElement)) return;
+  if (event.target.dataset.voiceNameOverlayClose === "true") closeVoiceNameOverlay();
+});
+ui.voiceNameForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  submitVoiceNameOverlay();
+});
 ui.bpm.addEventListener("input", () => {
   state.bpm = Number(ui.bpm.value);
   syncUi();
@@ -5244,6 +5305,14 @@ ui.sampleBrowserOverlay.addEventListener("click", (event) => {
   if (!(event.target instanceof HTMLElement)) return;
   if (event.target.dataset.sampleOverlayClose === "true") closeSampleBrowser();
 });
+
+function isEditableEventTarget(target) {
+  return target instanceof HTMLInputElement
+    || target instanceof HTMLTextAreaElement
+    || target instanceof HTMLSelectElement
+    || (target instanceof HTMLElement && target.isContentEditable);
+}
+
 ui.waveformOverview.addEventListener("pointerdown", (event) => {
   const pointerState = getOverviewPointerState(event.clientX);
   if (!pointerState?.insideRegion) return;
@@ -5314,6 +5383,10 @@ window.addEventListener("keydown", async (event) => {
     closeAddPatternOverlay();
     return;
   }
+  if (event.key === "Escape" && state.voiceNameOverlay.open) {
+    closeVoiceNameOverlay();
+    return;
+  }
   if (event.key === "Escape" && state.filterOverlay.open) {
     closeFilterOverlay();
     return;
@@ -5335,6 +5408,7 @@ window.addEventListener("keydown", async (event) => {
     return;
   }
   if (event.code !== "Space") return;
+  if (isEditableEventTarget(event.target)) return;
   event.preventDefault();
   try {
     await ensureAudio();
