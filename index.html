@@ -82,6 +82,7 @@
         <section class="panel pane-workspace">
           <div id="workspace-tabs" class="workspace-tabs" role="tablist" aria-label="Workspace Sections">
             <button class="workspace-tab active" type="button" role="tab" aria-selected="true" data-workspace-tab="voices">Voices</button>
+            <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="session">Session</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="patterns">Pattern Settings</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="track-effects">Pattern Effects</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="pattern-switcher">Pattern Switcher</button>
@@ -293,6 +294,42 @@
                       </label>
                     </section>
                   </div>
+                </section>
+              </div>
+            </section>
+
+            <section class="workspace-panel workspace-panel-session" data-workspace-panel="session">
+              <div class="session-toolbar">
+                <section class="control-group nested-control-group session-summary-group" aria-labelledby="session-summary-title">
+                  <div class="control-group-head">
+                    <h3 id="session-summary-title">Session</h3>
+                  </div>
+                  <dl class="session-metadata-grid">
+                    <div>
+                      <dt>Session Name</dt>
+                      <dd id="session-name-value">Untitled Session</dd>
+                    </div>
+                    <div>
+                      <dt>Date &amp; Time Created</dt>
+                      <dd id="session-created-value">Not saved yet</dd>
+                    </div>
+                    <div>
+                      <dt>Last Date &amp; Time Modified</dt>
+                      <dd id="session-modified-value">Not saved yet</dd>
+                    </div>
+                  </dl>
+                </section>
+                <section class="control-group nested-control-group session-operations-group" aria-labelledby="session-operations-title">
+                  <div class="control-group-head">
+                    <h3 id="session-operations-title">Session Operations</h3>
+                  </div>
+                  <div class="voice-operation-button-group session-operation-button-group" role="group" aria-label="Session operations">
+                    <button id="session-name" type="button">Name</button>
+                    <button id="session-save" type="button">Save</button>
+                    <button id="session-load" type="button">Load</button>
+                    <button id="session-clear" type="button">Clear</button>
+                  </div>
+                  <input id="session-load-input" type="file" accept=".json,application/json" hidden />
                 </section>
               </div>
             </section>
@@ -579,6 +616,28 @@
             <button id="voice-name-apply" type="submit" class="primary">Save Name</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div id="session-clear-overlay" class="overlay-shell is-hidden" aria-hidden="true">
+      <div class="overlay-backdrop" data-session-clear-overlay-close="true"></div>
+      <section class="overlay-panel session-clear-panel" role="dialog" aria-modal="true" aria-labelledby="session-clear-title">
+        <div class="panel-head overlay-head">
+          <div class="panel-head-copy">
+            <h2 id="session-clear-title">Clear Session</h2>
+            <p id="session-clear-copy">This will reset the current session settings to defaults.</p>
+          </div>
+          <button id="session-clear-close" type="button" aria-label="Close clear session window">X</button>
+        </div>
+        <div class="control-stack overlay-controls">
+          <section class="control-group nested-control-group">
+            <p class="session-clear-message">Clock, Mix, Sequencer, Voices, Patterns, Pattern Effects, Pattern Switcher, and Composer settings will be cleared.</p>
+          </section>
+          <div class="action-row">
+            <button id="session-clear-cancel" type="button">Cancel</button>
+            <button id="session-clear-confirm" type="button" class="danger">Clear Session</button>
+          </div>
+        </div>
       </section>
     </div>
 

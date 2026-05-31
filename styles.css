@@ -146,6 +146,12 @@ button.primary,
   background: linear-gradient(135deg, rgba(79, 196, 184, 0.22), rgba(111, 169, 255, 0.14) 58%, rgba(255, 175, 95, 0.18));
 }
 
+button.danger {
+  border-color: rgba(255, 139, 125, 0.42);
+  background: linear-gradient(135deg, rgba(255, 139, 125, 0.22), rgba(255, 175, 95, 0.12));
+  color: var(--text);
+}
+
 .file-picker input {
   display: none;
 }
@@ -570,8 +576,17 @@ h2 {
   margin-bottom: 10px;
 }
 
+.session-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.36fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
 .voice-routing-group,
-.voice-operations-group {
+.voice-operations-group,
+.session-summary-group,
+.session-operations-group {
   margin: 0;
   min-width: 0;
 }
@@ -637,6 +652,46 @@ h2 {
 .voice-operation-button-group button:hover {
   transform: none;
   background: rgba(255, 255, 255, 0.055);
+}
+
+.session-metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.session-metadata-grid div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--pane-radius);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.session-metadata-grid dt {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.session-metadata-grid dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.session-clear-message {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
 }
 
 .control-grid {
@@ -1375,6 +1430,10 @@ input[type="range"]::-moz-range-thumb {
   width: min(420px, calc(100vw - 32px));
 }
 
+.overlay-panel.session-clear-panel {
+  width: min(520px, calc(100vw - 32px));
+}
+
 .pattern-switcher-add {
   font-size: 1.2rem;
   font-weight: 400;
@@ -1830,6 +1889,11 @@ input[type="range"]::-moz-range-thumb {
   }
 
   .voice-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .session-toolbar,
+  .session-metadata-grid {
     grid-template-columns: 1fr;
   }
 

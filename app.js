@@ -19,6 +19,14 @@ const ui = {
   voiceSave: document.querySelector("#voice-save"),
   voiceLoad: document.querySelector("#voice-load"),
   voiceLoadInput: document.querySelector("#voice-load-input"),
+  sessionName: document.querySelector("#session-name"),
+  sessionSave: document.querySelector("#session-save"),
+  sessionLoad: document.querySelector("#session-load"),
+  sessionClear: document.querySelector("#session-clear"),
+  sessionLoadInput: document.querySelector("#session-load-input"),
+  sessionNameValue: document.querySelector("#session-name-value"),
+  sessionCreatedValue: document.querySelector("#session-created-value"),
+  sessionModifiedValue: document.querySelector("#session-modified-value"),
   sampleVoiceSettingsGroup: document.querySelector("#sample-voice-settings-group"),
   sampleSettingsGroup: document.querySelector("#sample-settings-group"),
   voicePlaybackSettingsGroup: document.querySelector("#voice-playback-settings-group"),
@@ -41,6 +49,12 @@ const ui = {
   voiceNameForm: document.querySelector("#voice-name-form"),
   voiceNameInput: document.querySelector("#voice-name-input"),
   voiceNameCancel: document.querySelector("#voice-name-cancel"),
+  voiceNameFieldTitle: document.querySelector("#voice-name-field-title"),
+  voiceNameApply: document.querySelector("#voice-name-apply"),
+  sessionClearOverlay: document.querySelector("#session-clear-overlay"),
+  sessionClearClose: document.querySelector("#session-clear-close"),
+  sessionClearCancel: document.querySelector("#session-clear-cancel"),
+  sessionClearConfirm: document.querySelector("#session-clear-confirm"),
   trackPatternSelect: document.querySelector("#track-pattern-select"),
   patternVoiceSelect: document.querySelector("#pattern-voice-select"),
   mode: document.querySelector("#mode"),
@@ -201,6 +215,9 @@ const D_ROOT_PITCH_CLASS = 0;
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const VOICE_FILE_TYPE = "pattern-weaver.voice";
 const VOICE_FILE_VERSION = 1;
+const SESSION_FILE_TYPE = "pattern-weaver.session";
+const SESSION_FILE_VERSION = 1;
+const DEFAULT_SESSION_NAME = "Untitled Session";
 
 function updateRangeFill(input) {
   if (!(input instanceof HTMLInputElement) || input.type !== "range") return;
@@ -1540,6 +1557,7 @@ const state = {
   selectedTrackIndex: 0,
   selectedVoiceIndex: 0,
   workspaceTab: "voices",
+  session: createSessionMetadata(),
   tracks: Array.from({ length: TRACK_COUNT }, (_, index) => createTrack(index + 1)),
   voices: Array.from({ length: TRACK_COUNT }, (_, index) => createVoiceConfig(index + 1)),
   trackPlaybackState: Array.from({ length: TRACK_COUNT }, (_, index) => createTrackPlaybackState(createTrack(index + 1))),
@@ -1594,7 +1612,11 @@ const state = {
   },
   voiceNameOverlay: {
     open: false,
+    target: "voice",
     voiceIndex: 0,
+  },
+  sessionClearOverlay: {
+    open: false,
   },
   pitchStepSelection: {
     trackIndex: null,
@@ -2004,8 +2026,48 @@ function normalizeVoice(index, source = {}) {
   };
 }
 
-function writeStoredSession() {
-  const payload = {
+function normalizeSessionName(value, fallback = DEFAULT_SESSION_NAME) {
+  const trimmed = String(value ?? "").trim();
+  return trimmed ? trimmed.slice(0, 48) : fallback;
+}
+
+function normalizeSessionDate(value, fallback) {
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  return fallback;
+}
+
+function normalizeSessionMetadata(source = {}, fallback = null) {
+  const now = new Date().toISOString();
+  const safeFallback = fallback ?? {
+    name: DEFAULT_SESSION_NAME,
+    createdAt: now,
+    modifiedAt: now,
+  };
+  const createdAt = normalizeSessionDate(source.createdAt, safeFallback.createdAt ?? now);
+  return {
+    name: normalizeSessionName(source.name, safeFallback.name ?? DEFAULT_SESSION_NAME),
+    createdAt,
+    modifiedAt: normalizeSessionDate(source.modifiedAt, safeFallback.modifiedAt ?? createdAt),
+  };
+}
+
+function createSessionMetadata(source = {}) {
+  const now = new Date().toISOString();
+  return normalizeSessionMetadata(source, {
+    name: DEFAULT_SESSION_NAME,
+    createdAt: now,
+    modifiedAt: now,
+  });
+}
+
+function touchSessionModified() {
+  state.session.modifiedAt = new Date().toISOString();
+}
+
+function createSessionSnapshot() {
+  return {
+    session: { ...state.session },
     bpm: state.bpm,
     swing: state.swing,
     steps: state.steps,
@@ -2057,18 +2119,32 @@ function writeStoredSession() {
       })),
     })),
   };
+}
 
+function writeStoredSession({ touch = true } = {}) {
+  if (touch) touchSessionModified();
+  const payload = createSessionSnapshot();
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    syncSessionPanel();
   } catch (error) {
     setDiagnostics("settings could not be saved in this browser.", "warn");
   }
 }
 
-function applyStoredSession() {
-  const stored = readStoredSession();
+function getSessionSnapshotSource(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  if (payload.type === SESSION_FILE_TYPE && payload.session && typeof payload.session === "object") return payload.session;
+  if (payload.settings && typeof payload.settings === "object") return payload.settings;
+  if ("bpm" in payload || "tracks" in payload || "voices" in payload || "composer" in payload) return payload;
+  return null;
+}
+
+function applyStoredSession(snapshot = readStoredSession()) {
+  const stored = getSessionSnapshotSource(snapshot);
   if (!stored) return;
 
+  state.session = normalizeSessionMetadata(stored.session, state.session);
   state.bpm = Number.isFinite(stored.bpm) ? Math.max(60, Math.min(180, stored.bpm)) : state.bpm;
   state.swing = Number.isFinite(stored.swing) ? Math.max(0, Math.min(100, stored.swing)) : state.swing;
   state.steps = BASE_GRID_STEPS;
@@ -2078,7 +2154,7 @@ function applyStoredSession() {
   state.selectedVoiceIndex = Number.isFinite(stored.selectedVoiceIndex)
     ? Math.max(0, Math.min(TRACK_COUNT - 1, stored.selectedVoiceIndex))
     : 0;
-  state.workspaceTab = ["voices", "patterns", "track-effects", "pattern-switcher", "composer"].includes(stored.workspaceTab)
+  state.workspaceTab = ["voices", "session", "patterns", "track-effects", "pattern-switcher", "composer"].includes(stored.workspaceTab)
     ? stored.workspaceTab
     : state.workspaceTab;
   state.mixVolume = Number.isFinite(stored.mixVolume) ? Math.max(0, Math.min(1, stored.mixVolume)) : state.mixVolume;
@@ -2128,6 +2204,9 @@ function applyStoredSession() {
   }
 
   syncAllTrackBuses();
+  resetTrackPlaybackState();
+  if (state.playback) state.playback.output.gain.value = state.mixVolume;
+  return true;
 }
 
 function setDiagnostics(message, level = "warn") {
@@ -3077,6 +3156,28 @@ function syncWorkspaceTabs() {
   });
 }
 
+function formatSessionDateTime(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Not saved yet";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
+function syncSessionPanel() {
+  if (ui.sessionNameValue) ui.sessionNameValue.textContent = state.session.name;
+  if (ui.sessionCreatedValue) ui.sessionCreatedValue.textContent = formatSessionDateTime(state.session.createdAt);
+  if (ui.sessionModifiedValue) ui.sessionModifiedValue.textContent = formatSessionDateTime(state.session.modifiedAt);
+}
+
+function syncSessionClearOverlay() {
+  if (!ui.sessionClearOverlay) return;
+  const isOpen = state.sessionClearOverlay.open;
+  ui.sessionClearOverlay.classList.toggle("is-hidden", !isOpen);
+  ui.sessionClearOverlay.setAttribute("aria-hidden", String(!isOpen));
+}
+
 function getTrackBarCount(track, pattern = getTrackPattern(track)) {
   const activePattern = pattern ?? getTrackPattern(track);
   return Math.max(1, Math.min(MAX_PATTERN_BARS, activePattern.barCount ?? DEFAULT_PATTERN_BAR_COUNT));
@@ -3438,11 +3539,16 @@ function syncVoiceNameOverlay() {
   ui.voiceNameOverlay.setAttribute("aria-hidden", String(!isOpen));
   if (!isOpen) return;
 
+  const target = state.voiceNameOverlay.target ?? "voice";
+  const isSessionTarget = target === "session";
   const voiceIndex = Math.max(0, Math.min(TRACK_COUNT - 1, state.voiceNameOverlay.voiceIndex ?? state.selectedVoiceIndex));
   const voice = state.voices[voiceIndex] ?? getSelectedVoice();
-  if (ui.voiceNameTitle) ui.voiceNameTitle.textContent = `Name ${formatVoiceName(voice, voiceIndex)}`;
+  const currentName = isSessionTarget ? state.session.name : formatVoiceName(voice, voiceIndex);
+  if (ui.voiceNameTitle) ui.voiceNameTitle.textContent = isSessionTarget ? "Name Session" : `Name ${currentName}`;
+  if (ui.voiceNameFieldTitle) ui.voiceNameFieldTitle.textContent = isSessionTarget ? "Session Name" : "Voice Name";
+  if (ui.voiceNameApply) ui.voiceNameApply.textContent = "Save Name";
   if (ui.voiceNameInput instanceof HTMLInputElement) {
-    ui.voiceNameInput.value = formatVoiceName(voice, voiceIndex);
+    ui.voiceNameInput.value = currentName;
     window.requestAnimationFrame(() => {
       ui.voiceNameInput.focus();
       ui.voiceNameInput.select();
@@ -3500,9 +3606,10 @@ function closeAddPatternOverlay() {
   syncAddPatternOverlay();
 }
 
-function openVoiceNameOverlay() {
+function openVoiceNameOverlay(target = "voice") {
   state.voiceNameOverlay = {
     open: true,
+    target,
     voiceIndex: state.selectedVoiceIndex,
   };
   syncVoiceNameOverlay();
@@ -3514,6 +3621,16 @@ function closeVoiceNameOverlay() {
 }
 
 function submitVoiceNameOverlay() {
+  if (state.voiceNameOverlay.target === "session") {
+    if (ui.voiceNameInput instanceof HTMLInputElement) {
+      state.session.name = normalizeSessionName(ui.voiceNameInput.value, state.session.name);
+      writeStoredSession();
+      setDiagnostics(`${state.session.name} named.`, "ok");
+    }
+    closeVoiceNameOverlay();
+    return;
+  }
+
   const voiceIndex = Math.max(0, Math.min(TRACK_COUNT - 1, state.voiceNameOverlay.voiceIndex ?? state.selectedVoiceIndex));
   const voice = state.voices[voiceIndex];
   if (!voice || !(ui.voiceNameInput instanceof HTMLInputElement)) {
@@ -4765,6 +4882,8 @@ function syncUi() {
   renderSequencePatternSwitcher();
   renderComposerGrid();
   syncWorkspaceTabs();
+  syncSessionPanel();
+  syncSessionClearOverlay();
   syncTransportButton();
   syncTrackSettingsOverlay();
   syncAddPatternOverlay();
@@ -4911,6 +5030,112 @@ async function loadSelectedVoiceFile(file) {
   }
 }
 
+function createSessionFilePayload() {
+  writeStoredSession();
+  return {
+    type: SESSION_FILE_TYPE,
+    version: SESSION_FILE_VERSION,
+    savedAt: state.session.modifiedAt,
+    session: createSessionSnapshot(),
+  };
+}
+
+function refreshSessionViews() {
+  syncUi();
+  renderTrackSelector();
+  renderEffectsMatrix();
+  renderSequencePatternSwitcher();
+  renderMixer();
+  renderPattern();
+  renderPitchLanes();
+  drawWaveform();
+  refreshRangeFills();
+}
+
+function saveCurrentSessionFile() {
+  const payload = createSessionFilePayload();
+  const fileName = `pattern-weaver-session-${slugifyFileName(state.session.name)}.json`;
+  downloadJsonFile(payload, fileName);
+  setDiagnostics(`${state.session.name} saved as JSON.`, "ok");
+}
+
+async function loadSessionFile(file) {
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const source = getSessionSnapshotSource(parsed);
+    if (!source) throw new Error("Unsupported session file");
+    if (isTransportRunning()) state.transport.stop();
+    applyStoredSession(source);
+    state.workspaceTab = "session";
+    state.voiceNameOverlay.open = false;
+    state.sessionClearOverlay.open = false;
+    state.filterOverlay.open = false;
+    state.delayOverlay.open = false;
+    state.driftOverlay.open = false;
+    state.swellOverlay.open = false;
+    state.sampleBrowserOpen = false;
+    refreshSessionViews();
+    writeStoredSession({ touch: false });
+    setDiagnostics(`${state.session.name} loaded from JSON.`, "ok");
+  } catch (error) {
+    setDiagnostics("session file could not be loaded.", "error");
+  }
+}
+
+function openSessionNameOverlay() {
+  openVoiceNameOverlay("session");
+}
+
+function openSessionClearOverlay() {
+  state.sessionClearOverlay.open = true;
+  syncSessionClearOverlay();
+}
+
+function closeSessionClearOverlay() {
+  state.sessionClearOverlay.open = false;
+  syncSessionClearOverlay();
+}
+
+function clearCurrentSessionSettings() {
+  if (isTransportRunning()) state.transport.stop();
+  state.playback?.stopAllSustainedVoices();
+  const currentSession = normalizeSessionMetadata(state.session);
+  state.session = {
+    ...currentSession,
+    modifiedAt: new Date().toISOString(),
+  };
+  state.bpm = 112;
+  state.swing = 0;
+  state.steps = BASE_GRID_STEPS;
+  state.selectedTrackIndex = 0;
+  state.selectedVoiceIndex = 0;
+  state.workspaceTab = "session";
+  state.tracks = Array.from({ length: TRACK_COUNT }, (_, index) => createTrack(index + 1));
+  state.voices = Array.from({ length: TRACK_COUNT }, (_, index) => createVoiceConfig(index + 1));
+  state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track));
+  state.trackIndicators = Array.from({ length: TRACK_COUNT }, () => null);
+  state.pitchStepSelection = { trackIndex: null, cellIndex: null };
+  state.currentTransportStep = -1;
+  state.mixVolume = 0.9;
+  state.composer = createDefaultComposerState();
+  state.sample.setRegion(0, 1);
+  state.filterOverlay.open = false;
+  state.delayOverlay.open = false;
+  state.driftOverlay.open = false;
+  state.swellOverlay.open = false;
+  state.trackSettingsOverlay.open = false;
+  state.addPatternOverlay.open = false;
+  state.voiceNameOverlay.open = false;
+  state.sampleBrowserOpen = false;
+  closeSessionClearOverlay();
+  syncAllTrackBuses();
+  if (state.playback) state.playback.output.gain.value = state.mixVolume;
+  refreshSessionViews();
+  writeStoredSession({ touch: false });
+  setDiagnostics("session settings cleared.", "ok");
+}
+
 function updateTrackFilter(trackIndex, patch) {
   const track = state.tracks[trackIndex];
   if (!track) return;
@@ -5028,6 +5253,15 @@ ui.voiceLoadInput.addEventListener("change", async (event) => {
   await loadSelectedVoiceFile(file);
   event.target.value = "";
 });
+ui.sessionName?.addEventListener("click", openSessionNameOverlay);
+ui.sessionSave?.addEventListener("click", saveCurrentSessionFile);
+ui.sessionLoad?.addEventListener("click", () => ui.sessionLoadInput?.click());
+ui.sessionLoadInput?.addEventListener("change", async (event) => {
+  const [file] = event.target.files ?? [];
+  await loadSessionFile(file);
+  event.target.value = "";
+});
+ui.sessionClear?.addEventListener("click", openSessionClearOverlay);
 ui.mode.addEventListener("change", () => updateSelectedVoice({ mode: ui.mode.value }));
 ui.grainLocation.addEventListener("change", () => updateSelectedVoice({ grainLocation: ui.grainLocation.value }));
 ui.voicePlacement.addEventListener("input", () => updateSelectedVoice({ voicePlacement: Number(ui.voicePlacement.value) }));
@@ -5207,6 +5441,13 @@ ui.voiceNameForm.addEventListener("submit", (event) => {
   event.preventDefault();
   submitVoiceNameOverlay();
 });
+ui.sessionClearClose?.addEventListener("click", () => closeSessionClearOverlay());
+ui.sessionClearCancel?.addEventListener("click", () => closeSessionClearOverlay());
+ui.sessionClearConfirm?.addEventListener("click", clearCurrentSessionSettings);
+ui.sessionClearOverlay?.addEventListener("click", (event) => {
+  if (!(event.target instanceof HTMLElement)) return;
+  if (event.target.dataset.sessionClearOverlayClose === "true") closeSessionClearOverlay();
+});
 ui.bpm.addEventListener("input", () => {
   state.bpm = Number(ui.bpm.value);
   syncUi();
@@ -5385,6 +5626,10 @@ window.addEventListener("keydown", async (event) => {
   }
   if (event.key === "Escape" && state.voiceNameOverlay.open) {
     closeVoiceNameOverlay();
+    return;
+  }
+  if (event.key === "Escape" && state.sessionClearOverlay.open) {
+    closeSessionClearOverlay();
     return;
   }
   if (event.key === "Escape" && state.filterOverlay.open) {
