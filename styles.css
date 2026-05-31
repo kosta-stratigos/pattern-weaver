@@ -1357,27 +1357,13 @@ input[type="range"]::-moz-range-thumb {
 .composer-toggle-group {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 52%),
-    rgba(255, 255, 255, 0.03);
-  overflow: hidden;
+  min-width: 112px;
 }
 
 .composer-toggle-group button {
-  min-height: 40px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  box-shadow: none;
+  min-height: 30px;
+  min-width: 56px;
+  padding: 6px 12px;
 }
 
 .composer-toggle-group button + button {
@@ -1385,9 +1371,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .composer-toggle-group button.active {
-  background:
-    linear-gradient(180deg, rgba(79, 196, 184, 0.16), rgba(79, 196, 184, 0.08)),
-    rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.095);
   color: var(--text);
 }
 
@@ -1397,14 +1381,12 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .composer-toggle-group button.active:hover {
-  background:
-    linear-gradient(180deg, rgba(79, 196, 184, 0.18), rgba(79, 196, 184, 0.1)),
-    rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .composer-icon-group button {
   min-width: 56px;
-  padding: 0 12px;
+  padding: 6px 12px;
 }
 
 .material-symbols-sharp {
