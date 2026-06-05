@@ -4107,12 +4107,17 @@ async function assignLocalSampleToVoice(file, voiceIndex = state.selectedVoiceIn
   }
 }
 
-async function ensureVoiceSampleLoaded(voiceIndex, { preview = false } = {}) {
+async function ensureVoiceSampleLoaded(voiceIndex, { preview = false, force = false } = {}) {
   const voice = state.voices[voiceIndex];
   if (!voiceUsesSample(voice)) return true;
   const layer = getVoiceSampleLayer(voiceIndex);
-  if (layer.buffer) return true;
-  if (voice.sampleSource === "local") return false;
+  if (layer.buffer && !force) return true;
+  if (voice.sampleSource === "local") {
+    const cachedLayer = sampleCache.get(voice.sampleId);
+    if (cachedLayer?.buffer) return assignDecodedLayerToVoice(cachedLayer, voiceIndex);
+    if (force) layer.clearBuffer();
+    return false;
+  }
   const entry = getSampleEntryById(voice.sampleId) ?? getSampleEntryById(DEFAULT_SAMPLE_ID) ?? state.sampleLibrary[0];
   if (!entry) return false;
   return assignLibrarySampleToVoice(entry, voiceIndex, { preview, persist: preview });
@@ -5806,7 +5811,15 @@ async function loadSelectedVoiceFile(file) {
     importedVoice.id = target.id;
     importedVoice.name = normalizeVoiceName(source.name, target.name);
     updateSelectedVoice(importedVoice);
-    setDiagnostics(`${formatVoiceName(importedVoice, state.selectedVoiceIndex)} loaded from JSON.`, "ok");
+    const sampleLoaded = await ensureVoiceSampleLoaded(state.selectedVoiceIndex, { force: true });
+    syncUi();
+    drawWaveform();
+    drawChopWaveforms();
+    renderPattern();
+    const sampleWarning = voiceUsesSample(importedVoice) && !sampleLoaded
+      ? " Local sample audio must be loaded again."
+      : "";
+    setDiagnostics(`${formatVoiceName(importedVoice, state.selectedVoiceIndex)} loaded from JSON.${sampleWarning}`, sampleWarning ? "warn" : "ok");
   } catch (error) {
     setDiagnostics("voice file could not be loaded.", "error");
   }
