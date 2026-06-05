@@ -598,7 +598,7 @@ h2 {
 
 .voice-routing-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
   gap: 10px;
 }
 
@@ -652,6 +652,12 @@ h2 {
 .voice-operation-button-group button:hover {
   transform: none;
   background: rgba(255, 255, 255, 0.055);
+}
+
+.voice-operation-button-group button.active {
+  background: rgba(255, 255, 255, 0.13);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 .session-metadata-grid {
@@ -721,7 +727,8 @@ h2 {
 }
 
 .synth-settings-group,
-.sample-voice-settings-group {
+.sample-voice-settings-group,
+.chop-settings-stack {
   grid-column: 1 / -1;
 }
 
@@ -745,6 +752,75 @@ h2 {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 48%),
     rgba(255, 255, 255, 0.018);
+}
+
+.chop-settings-stack {
+  gap: 12px;
+}
+
+.chop-playback-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+}
+
+.chop-toggle-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--pane-radius);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chop-toggle-row .composer-slot-switch {
+  width: 42px;
+  min-height: 28px;
+}
+
+.chop-playback-mode-group {
+  align-self: end;
+  min-height: 36px;
+}
+
+.chop-sample-display {
+  display: grid;
+  gap: 8px;
+}
+
+.chop-waveform,
+.chop-waveform-overview {
+  width: 100%;
+  display: block;
+  border: 1px solid rgba(126, 205, 185, 0.14);
+  border-radius: var(--pane-radius);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 48%),
+    rgba(255, 255, 255, 0.018);
+}
+
+.chop-waveform {
+  height: 184px;
+}
+
+.chop-waveform-overview {
+  height: 64px;
+  cursor: default;
+  touch-action: none;
+}
+
+.chop-waveform-overview.is-region-draggable {
+  cursor: grab;
+}
+
+.chop-waveform-overview.is-region-resizable {
+  cursor: ew-resize;
+}
+
+.chop-waveform-overview.is-dragging {
+  cursor: grabbing;
 }
 
 .track-envelope-visualizer {
@@ -1934,6 +2010,10 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (max-width: 1280px) {
+  .chop-playback-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .pattern-settings-stack {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1949,6 +2029,10 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (max-width: 920px) {
+  .chop-playback-grid {
+    grid-template-columns: 1fr;
+  }
+
   .pattern-settings-stack {
     grid-template-columns: 1fr;
   }

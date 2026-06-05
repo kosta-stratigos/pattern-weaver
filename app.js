@@ -7,6 +7,9 @@ const ui = {
   sampleBrowserInput: document.querySelector("#sample-browser-input"),
   sampleLibraryList: document.querySelector("#sample-library-list"),
   sampleStatus: document.querySelector("#sample-status"),
+  voiceSampleSelect: document.querySelector("#voice-sample-select"),
+  voiceSampleField: document.querySelector("#voice-sample-field"),
+  voiceSampleInput: document.querySelector("#voice-sample-input"),
   diagnostics: document.querySelector("#diagnostics"),
   waveform: document.querySelector("#waveform"),
   waveformOverview: document.querySelector("#waveform-overview"),
@@ -30,6 +33,19 @@ const ui = {
   sampleVoiceSettingsGroup: document.querySelector("#sample-voice-settings-group"),
   sampleSettingsGroup: document.querySelector("#sample-settings-group"),
   voicePlaybackSettingsGroup: document.querySelector("#voice-playback-settings-group"),
+  chopSettingsGroup: document.querySelector("#chop-settings-group"),
+  chopPlayheadBehavior: document.querySelector("#chop-playhead-behavior"),
+  chopPlayheadPositionField: document.querySelector("#chop-playhead-position-field"),
+  chopPlayheadPosition: document.querySelector("#chop-playhead-position"),
+  chopPlayheadPositionValue: document.querySelector("#chop-playhead-position-value"),
+  chopPlaybackLength: document.querySelector("#chop-playback-length"),
+  chopPlaybackLengthValue: document.querySelector("#chop-playback-length-value"),
+  chopReverseToggle: document.querySelector("#chop-reverse-toggle"),
+  chopUseNotePitchToggle: document.querySelector("#chop-use-note-pitch-toggle"),
+  chopPlayOneShot: document.querySelector("#chop-play-one-shot"),
+  chopPlayLoop: document.querySelector("#chop-play-loop"),
+  chopWaveform: document.querySelector("#chop-waveform"),
+  chopWaveformOverview: document.querySelector("#chop-waveform-overview"),
   synthSettingsGroup: document.querySelector("#synth-settings-group"),
   workspaceTabs: Array.from(document.querySelectorAll("[data-workspace-tab]")),
   workspacePanels: Array.from(document.querySelectorAll("[data-workspace-panel]")),
@@ -169,13 +185,17 @@ const ui = {
 };
 
 const STORAGE_KEY = "granular-chop-lab:session";
+const SAMPLE_MANIFEST_URL = "./samples/manifest.json";
 const DEFAULT_SAMPLE_URL = "./samples/95721__elankford__pump-organ-mid-c.wav";
 const DEFAULT_SAMPLE_NAME = "95721__elankford__pump-organ-mid-c.wav";
-const SAMPLE_LIBRARY = [
+const DEFAULT_SAMPLE_ID = DEFAULT_SAMPLE_NAME;
+const SAMPLE_LOAD_NEW_VALUE = "__load_new_sample__";
+const SAMPLE_LIBRARY_FALLBACK = [
   { name: "bird_singing_-_amsel_-_blackbird_1_z9i.wav", url: "./samples/bird_singing_-_amsel_-_blackbird_1_z9i.wav" },
+  { name: "620224__pax11__skuast.wav", url: "./samples/620224__pax11__skuast.wav" },
   { name: "orthodox_priest_singing_1_r8j.wav", url: "./samples/orthodox_priest_singing_1_r8j.wav" },
   { name: "95721__elankford__pump-organ-mid-c.wav", url: "./samples/95721__elankford__pump-organ-mid-c.wav" },
-];
+].map((entry) => ({ ...entry, id: entry.name, source: "library" }));
 const DEFAULT_PATTERN_BAR_COUNT = 2;
 const MAX_PATTERN_BARS = 8;
 const SEQUENCER_BARS_PER_ROW = 2;
@@ -199,6 +219,8 @@ const TRACK_STEP_FILL_TYPES = ["none", "even", "random"];
 const TRACK_PITCH_FILL_TYPES = ["single", "rising", "falling", "random-once", "random-every"];
 const TRACK_ENVELOPE_TYPES = ["adsr", "ad", "looping", "hold"];
 const SYNTH_WAVES = ["sine", "triangle", "sawtooth", "square"];
+const CHOP_PLAYHEAD_BEHAVIORS = ["fixed", "random", "note"];
+const CHOP_PLAYBACK_MODES = ["one-shot", "loop"];
 const SCALE_OPTIONS = [
   { value: "chromatic", label: "Chromatic", intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
   { value: "ionian", label: "Ionian (I)", intervals: [0, 2, 4, 5, 7, 9, 11] },
@@ -747,6 +769,21 @@ class SampleLayer {
     return this.buffer;
   }
 
+  useDecodedBuffer(buffer, reversedBuffer = null) {
+    this.buffer = buffer;
+    this.reversedBuffer = reversedBuffer;
+    this.regionStart = 0;
+    this.regionEnd = 1;
+    return this.buffer;
+  }
+
+  clearBuffer() {
+    this.buffer = null;
+    this.reversedBuffer = null;
+    this.regionStart = 0;
+    this.regionEnd = 1;
+  }
+
   createReversedBuffer(audioContext, sourceBuffer) {
     const reversed = audioContext.createBuffer(
       sourceBuffer.numberOfChannels,
@@ -977,9 +1014,10 @@ class PlaybackLayer {
     loopEnd = 0,
     sustainDuration = null,
     envelope = createDefaultTrackEnvelope(),
+    sampleLayer = this.sampleLayer,
   }) {
-    const baseBuffer = this.sampleLayer.buffer;
-    const buffer = reverse ? this.sampleLayer.reversedBuffer : baseBuffer;
+    const baseBuffer = sampleLayer?.buffer;
+    const buffer = reverse ? sampleLayer?.reversedBuffer : baseBuffer;
     if (!buffer) return false;
 
     const source = this.audioContext.createBufferSource();
@@ -1048,15 +1086,16 @@ class PlaybackLayer {
   }
 
   triggerGranular(settings, when = this.audioContext.currentTime, sliceIndex = null, noteDuration = 0.1) {
-    const buffer = this.sampleLayer.buffer;
+    const sampleLayer = settings.sampleLayer ?? this.sampleLayer;
+    const buffer = sampleLayer?.buffer;
     if (!buffer) return false;
 
-    const { startTime, endTime } = this.sampleLayer.getRegionBounds();
+    const { startTime, endTime } = sampleLayer.getRegionBounds();
     const rate = 2 ** (settings.pitch / 12);
     const regionDuration = Math.max(0.02, endTime - startTime);
     const grainDuration = Math.min(settings.grainSizeMs / 1000, regionDuration);
     const grainCount = Math.max(1, Math.round(settings.density * 0.35));
-    const slices = this.sampleLayer.getSlices(settings.sliceCount);
+    const slices = sampleLayer.getSlices(settings.sliceCount);
     const resolvedSliceIndex = sliceIndex
       ?? (settings.grainLocation === "random" && slices.length ? Math.floor(Math.random() * slices.length) : 0);
     const anchorSlice = slices.length ? slices[resolvedSliceIndex % slices.length] : null;
@@ -1080,6 +1119,7 @@ class PlaybackLayer {
         loopEnd: Math.min(endTime, loopPosition + grainDuration),
         sustainDuration: Math.max(grainDuration, noteDuration),
         envelope: settings.envelope,
+        sampleLayer,
       });
     }
 
@@ -1098,10 +1138,42 @@ class PlaybackLayer {
           level: settings.level ?? 1,
           sustainDuration: Math.max(grainDuration, noteDuration),
           envelope: settings.envelope,
+          sampleLayer,
         }) || triggered;
     }
 
     return triggered;
+  }
+
+  triggerChop(track, when = this.audioContext.currentTime, noteDuration = 0.1, pitchOverride = null) {
+    const voice = this.state.voices[track.voiceIndex] ?? getTrackVoice(track);
+    const sampleLayer = getVoiceSampleLayer(track.voiceIndex);
+    const pitchMidi = pitchOverride?.pitchMidi ?? PITCH_LANE_REFERENCE_MIDI;
+    const window = getChopPlaybackWindow(voice, sampleLayer, pitchMidi);
+    if (!window) return false;
+
+    const rate = voice.chopUseNotePitch
+      ? 2 ** ((pitchMidi - PITCH_LANE_REFERENCE_MIDI) / 12)
+      : 1;
+    const loop = voice.chopPlaybackMode === "loop";
+    const playbackDuration = Math.max(0.03, window.duration);
+    const handle = this.createVoice({
+      trackIndex: track.id - 1,
+      when,
+      offset: window.startTime,
+      duration: playbackDuration,
+      rate,
+      reverse: voice.reverse,
+      level: 1,
+      loop,
+      loopStart: window.startTime,
+      loopEnd: window.endTime,
+      sustainDuration: Math.max(playbackDuration, noteDuration ?? playbackDuration),
+      envelope: track.envelope,
+      sampleLayer,
+    });
+    if (handle) setTrackIndicator(track.id - 1, window.startTime, window.endTime, loop ? 260 : 220);
+    return handle;
   }
 
   triggerSlice(track, when = this.audioContext.currentTime, sliceIndex = null, noteDuration = 0.1) {
@@ -1258,6 +1330,7 @@ class PlaybackLayer {
       return this.triggerGranular(
         {
           trackIndex: playbackTrack.trackIndex,
+          sampleLayer: getVoiceSampleLayer(playbackTrack.voiceIndex),
           grainSizeMs: playbackTrack.grainSize,
           density: playbackTrack.grainDensity,
           spray: playbackTrack.spray / 100,
@@ -1275,15 +1348,7 @@ class PlaybackLayer {
         noteDuration,
       );
     }
-    return this.triggerSlice(
-      {
-        ...playbackTrack,
-        pitch: pitchOverride?.pitchSemitones ?? playbackTrack.pitch,
-      },
-      when,
-      sliceIndex,
-      noteDuration,
-    );
+    return this.triggerChop(playbackTrack, when, noteDuration, pitchOverride);
   }
 
   triggerHeldTrack(track, when = this.audioContext.currentTime, sliceIndex = null, pitchOverride = null) {
@@ -1313,6 +1378,7 @@ class PlaybackLayer {
       return this.triggerGranular(
         {
           trackIndex: playbackTrack.trackIndex,
+          sampleLayer: getVoiceSampleLayer(playbackTrack.voiceIndex),
           grainSizeMs: playbackTrack.grainSize,
           density: playbackTrack.grainDensity,
           spray: playbackTrack.spray / 100,
@@ -1330,16 +1396,14 @@ class PlaybackLayer {
         sustainDuration,
       );
     }
-    return this.triggerSlice(
+    return this.triggerChop(
       {
         ...playbackTrack,
-        pitch: pitchOverride?.pitchSemitones ?? playbackTrack.pitch,
-        voicePlaybackMode: "loop",
         envelope: normalizeTrackEnvelope({ ...playbackTrack.envelope, sustain: 100, release: 120 }, playbackTrack.envelope),
       },
       when,
-      sliceIndex,
       sustainDuration,
+      pitchOverride,
     );
   }
 }
@@ -1523,6 +1587,11 @@ function createVoiceConfig(id) {
     id,
     name: `Voice ${id}`,
     mode: id % 2 === 0 ? "chop" : "granular",
+    sampleId: DEFAULT_SAMPLE_ID,
+    sampleName: DEFAULT_SAMPLE_NAME,
+    sampleSource: "library",
+    sampleRegionStart: 0,
+    sampleRegionEnd: 1,
     reverse: false,
     grainLocation: "fixed",
     voicePlacement: 50,
@@ -1532,6 +1601,11 @@ function createVoiceConfig(id) {
     spray: 18,
     pitch: 0,
     chopGate: 70,
+    chopPlayheadBehavior: "fixed",
+    chopPlayheadPosition: 0,
+    chopPlaybackLength: 25,
+    chopUseNotePitch: false,
+    chopPlaybackMode: "one-shot",
     sliceCount: 8,
     synthWave: "sine",
     synthWaveShape: 50,
@@ -1549,6 +1623,9 @@ const state = {
   audioContext: null,
   decodeAudioContext: null,
   sample: new SampleLayer(),
+  sampleLibrary: SAMPLE_LIBRARY_FALLBACK,
+  sampleManifestLoaded: false,
+  voiceSampleLayers: Array.from({ length: TRACK_COUNT }, () => new SampleLayer()),
   playback: null,
   transport: null,
   bpm: 112,
@@ -1567,6 +1644,13 @@ const state = {
   overviewDrag: {
     active: false,
     pointerId: null,
+    offset: 0,
+    width: 1,
+  },
+  chopSampleDrag: {
+    active: false,
+    pointerId: null,
+    mode: null,
     offset: 0,
     width: 1,
   },
@@ -1628,6 +1712,8 @@ const state = {
   composer: createDefaultComposerState(),
 };
 
+const sampleCache = new Map();
+
 function getSelectedTrack() {
   return state.tracks[state.selectedTrackIndex];
 }
@@ -1654,6 +1740,71 @@ function getSelectedTrackPattern() {
 
 function getSelectedVoice() {
   return state.voices[state.selectedVoiceIndex];
+}
+
+function normalizeSampleEntry(entry = {}) {
+  const name = String(entry.name ?? entry.id ?? "").trim();
+  const url = String(entry.url ?? "").trim();
+  if (!name || !url) return null;
+  return {
+    id: String(entry.id ?? name),
+    name,
+    url,
+    source: "library",
+  };
+}
+
+function getSampleEntryById(sampleId) {
+  return state.sampleLibrary.find((entry) => entry.id === sampleId) ?? null;
+}
+
+function getVoiceSampleLayer(voiceIndex = state.selectedVoiceIndex) {
+  const safeIndex = Math.max(0, Math.min(TRACK_COUNT - 1, Number(voiceIndex) || 0));
+  if (!state.voiceSampleLayers[safeIndex]) state.voiceSampleLayers[safeIndex] = new SampleLayer();
+  return state.voiceSampleLayers[safeIndex];
+}
+
+function resetVoiceSampleLayers() {
+  state.voiceSampleLayers = Array.from({ length: TRACK_COUNT }, () => new SampleLayer());
+  syncActiveSampleLayer();
+}
+
+function getSelectedVoiceSampleLayer() {
+  return getVoiceSampleLayer(state.selectedVoiceIndex);
+}
+
+function syncVoiceSampleRegion(voiceIndex = state.selectedVoiceIndex) {
+  const voice = state.voices[voiceIndex];
+  const layer = getVoiceSampleLayer(voiceIndex);
+  if (!voice || !layer) return layer;
+  layer.setRegion(voice.sampleRegionStart ?? 0, voice.sampleRegionEnd ?? 1);
+  return layer;
+}
+
+function syncActiveSampleLayer() {
+  state.sample = syncVoiceSampleRegion(state.selectedVoiceIndex);
+  return state.sample;
+}
+
+function updateVoiceSampleRegion(voiceIndex, start, end) {
+  const voice = state.voices[voiceIndex];
+  if (!voice) return;
+  const layer = getVoiceSampleLayer(voiceIndex);
+  layer.setRegion(start, end);
+  voice.sampleRegionStart = layer.regionStart;
+  voice.sampleRegionEnd = layer.regionEnd;
+}
+
+function getVoiceSampleName(voice = getSelectedVoice()) {
+  return voice?.sampleName || getSampleEntryById(voice?.sampleId)?.name || DEFAULT_SAMPLE_NAME;
+}
+
+function voiceUsesSample(voice) {
+  return voice?.mode === "granular" || voice?.mode === "chop";
+}
+
+function selectedVoiceUsesSample() {
+  return voiceUsesSample(getSelectedVoice());
 }
 
 function normalizeComposerSlots(sourceSlots) {
@@ -1858,6 +2009,15 @@ function hasAnySampleBasedTracks() {
   return state.tracks.some((track) => trackUsesSample(track));
 }
 
+function trackHasLoadedSample(track) {
+  if (!trackUsesSample(track)) return true;
+  return Boolean(getVoiceSampleLayer(track.voiceIndex)?.buffer);
+}
+
+function hasMissingSampleBasedTracks() {
+  return state.tracks.some((track) => trackUsesSample(track) && !trackHasLoadedSample(track));
+}
+
 function createTrackPlaybackState(track = createTrack(1), pattern = getTrackPattern(track)) {
   const visibleCellCount = getTrackVisibleCellCount(track, pattern);
   const activePattern = pattern ?? getTrackPattern(track);
@@ -1976,6 +2136,11 @@ function serializeVoice(voice) {
     id: voice.id,
     name: voice.name,
     mode: voice.mode,
+    sampleId: voice.sampleId,
+    sampleName: voice.sampleName,
+    sampleSource: voice.sampleSource,
+    sampleRegionStart: voice.sampleRegionStart,
+    sampleRegionEnd: voice.sampleRegionEnd,
     reverse: voice.reverse,
     grainLocation: voice.grainLocation,
     voicePlacement: voice.voicePlacement,
@@ -1985,6 +2150,11 @@ function serializeVoice(voice) {
     spray: voice.spray,
     pitch: voice.pitch,
     chopGate: voice.chopGate,
+    chopPlayheadBehavior: voice.chopPlayheadBehavior,
+    chopPlayheadPosition: voice.chopPlayheadPosition,
+    chopPlaybackLength: voice.chopPlaybackLength,
+    chopUseNotePitch: voice.chopUseNotePitch,
+    chopPlaybackMode: voice.chopPlaybackMode,
     sliceCount: voice.sliceCount,
     synthWave: voice.synthWave,
     synthWaveShape: voice.synthWaveShape,
@@ -2004,6 +2174,11 @@ function normalizeVoice(index, source = {}) {
     ...fallback,
     name: normalizeVoiceName(source.name, fallback.name),
     mode: ["synth", "chop", "granular"].includes(source.mode) ? source.mode : fallback.mode,
+    sampleId: typeof source.sampleId === "string" && source.sampleId.trim() ? source.sampleId : fallback.sampleId,
+    sampleName: typeof source.sampleName === "string" && source.sampleName.trim() ? source.sampleName : fallback.sampleName,
+    sampleSource: ["library", "local"].includes(source.sampleSource) ? source.sampleSource : fallback.sampleSource,
+    sampleRegionStart: clampNumber(source.sampleRegionStart, 0, 0.99, fallback.sampleRegionStart),
+    sampleRegionEnd: clampNumber(source.sampleRegionEnd, 0.01, 1, fallback.sampleRegionEnd),
     reverse: Boolean(source.reverse),
     grainLocation: ["fixed", "sequential", "sweep", "random"].includes(source.grainLocation) ? source.grainLocation : fallback.grainLocation,
     voicePlacement: clampNumber(source.voicePlacement, 0, 100, fallback.voicePlacement),
@@ -2013,6 +2188,11 @@ function normalizeVoice(index, source = {}) {
     spray: clampNumber(source.spray, 0, 100, fallback.spray),
     pitch: clampNumber(source.pitch, -24, 24, fallback.pitch),
     chopGate: clampNumber(source.chopGate, 10, 100, fallback.chopGate),
+    chopPlayheadBehavior: CHOP_PLAYHEAD_BEHAVIORS.includes(source.chopPlayheadBehavior) ? source.chopPlayheadBehavior : fallback.chopPlayheadBehavior,
+    chopPlayheadPosition: clampNumber(source.chopPlayheadPosition, 0, 100, fallback.chopPlayheadPosition),
+    chopPlaybackLength: clampNumber(source.chopPlaybackLength, 1, 100, fallback.chopPlaybackLength),
+    chopUseNotePitch: Boolean(source.chopUseNotePitch),
+    chopPlaybackMode: CHOP_PLAYBACK_MODES.includes(source.chopPlaybackMode) ? source.chopPlaybackMode : fallback.chopPlaybackMode,
     sliceCount: clampNumber(source.sliceCount, 2, 16, fallback.sliceCount),
     synthWave: SYNTH_WAVES.includes(source.synthWave) ? source.synthWave : fallback.synthWave,
     synthWaveShape: clampSynthWaveShape(source.synthWaveShape ?? fallback.synthWaveShape, fallback.synthWaveShape),
@@ -2159,13 +2339,12 @@ function applyStoredSession(snapshot = readStoredSession()) {
     : state.workspaceTab;
   state.mixVolume = Number.isFinite(stored.mixVolume) ? Math.max(0, Math.min(1, stored.mixVolume)) : state.mixVolume;
   state.composer = normalizeComposerState(stored.composer);
-
-  if (stored.sample) {
-    state.sample.setRegion(
-      Number.isFinite(stored.sample.regionStart) ? stored.sample.regionStart : 0,
-      Number.isFinite(stored.sample.regionEnd) ? stored.sample.regionEnd : 1,
-    );
-  }
+  const legacySampleRegion = stored.sample
+    ? {
+      start: Number.isFinite(stored.sample.regionStart) ? stored.sample.regionStart : 0,
+      end: Number.isFinite(stored.sample.regionEnd) ? stored.sample.regionEnd : 1,
+    }
+    : null;
 
   if (Array.isArray(stored.voices)) {
     state.voices = Array.from({ length: TRACK_COUNT }, (_, index) => normalizeVoice(index, stored.voices[index]));
@@ -2203,6 +2382,17 @@ function applyStoredSession(snapshot = readStoredSession()) {
     state.tracks = [legacyTrack, ...Array.from({ length: TRACK_COUNT - 1 }, (_, index) => createTrack(index + 2))];
   }
 
+  resetVoiceSampleLayers();
+  if (legacySampleRegion) {
+    state.voices.forEach((voice, index) => {
+      const sourceVoice = Array.isArray(stored.voices)
+        ? stored.voices[index]
+        : (Array.isArray(stored.tracks) ? stored.tracks[index] : null);
+      if (sourceVoice?.sampleRegionStart != null || sourceVoice?.sampleRegionEnd != null) return;
+      updateVoiceSampleRegion(index, legacySampleRegion.start, legacySampleRegion.end);
+    });
+  }
+  state.defaultSampleLoaded = false;
   syncAllTrackBuses();
   resetTrackPlaybackState();
   if (state.playback) state.playback.output.gain.value = state.mixVolume;
@@ -2249,17 +2439,13 @@ function syncAllTrackBuses() {
 }
 
 async function loadDefaultSample() {
-  if (state.defaultSampleLoaded || state.sample.buffer) return;
+  if (state.defaultSampleLoaded && !hasMissingSampleBasedTracks()) return;
   if (state.defaultSampleLoadPromise) return state.defaultSampleLoadPromise;
 
   state.defaultSampleLoadPromise = (async () => {
     try {
-      await loadSampleSource(async () => {
-        const response = await fetch(DEFAULT_SAMPLE_URL);
-        if (!response.ok) throw new Error(`request failed (${response.status})`);
-        const data = await response.arrayBuffer();
-        await state.sample.loadArrayBuffer(data, getDecodeAudioContext());
-      }, DEFAULT_SAMPLE_NAME, { preview: false, ensureAudioReady: false });
+      await loadSampleManifest();
+      state.defaultSampleLoaded = await ensureSamplesForPlayback();
     } catch (error) {
       console.error(`Default sample load failed: ${error.message}`);
     } finally {
@@ -2994,6 +3180,16 @@ function getTrackPlaybackSettings(track) {
     spray: voice.spray,
     pitch: voice.pitch,
     chopGate: voice.chopGate,
+    sampleId: voice.sampleId,
+    sampleName: voice.sampleName,
+    sampleSource: voice.sampleSource,
+    sampleRegionStart: voice.sampleRegionStart,
+    sampleRegionEnd: voice.sampleRegionEnd,
+    chopPlayheadBehavior: voice.chopPlayheadBehavior,
+    chopPlayheadPosition: voice.chopPlayheadPosition,
+    chopPlaybackLength: voice.chopPlaybackLength,
+    chopUseNotePitch: voice.chopUseNotePitch,
+    chopPlaybackMode: voice.chopPlaybackMode,
     sliceCount: voice.sliceCount,
     synthWave: voice.synthWave,
     synthWaveShape: voice.synthWaveShape,
@@ -3019,6 +3215,35 @@ function renderPatternVoiceOptions() {
     option.textContent = formatVoiceName(voice, index);
     ui.patternVoiceSelect.append(option);
   });
+}
+
+function renderVoiceSampleOptions() {
+  if (!(ui.voiceSampleSelect instanceof HTMLSelectElement)) return;
+  const voice = getSelectedVoice();
+  const currentSampleId = voice?.sampleId ?? DEFAULT_SAMPLE_ID;
+  ui.voiceSampleSelect.innerHTML = "";
+
+  state.sampleLibrary.forEach((sampleEntry) => {
+    const option = document.createElement("option");
+    option.value = sampleEntry.id;
+    option.textContent = sampleEntry.source === "local" ? `${sampleEntry.name} (Local)` : sampleEntry.name;
+    ui.voiceSampleSelect.append(option);
+  });
+
+  if (currentSampleId && !state.sampleLibrary.some((entry) => entry.id === currentSampleId)) {
+    const option = document.createElement("option");
+    option.value = currentSampleId;
+    option.textContent = `${getVoiceSampleName(voice)} (Unavailable)`;
+    ui.voiceSampleSelect.append(option);
+  }
+
+  const loadOption = document.createElement("option");
+  loadOption.value = SAMPLE_LOAD_NEW_VALUE;
+  loadOption.textContent = "Load new sample...";
+  ui.voiceSampleSelect.append(loadOption);
+  ui.voiceSampleSelect.value = currentSampleId;
+  ui.voiceSampleSelect.disabled = !selectedVoiceUsesSample();
+  ui.voiceSampleField?.classList.toggle("ui-hidden", !selectedVoiceUsesSample());
 }
 
 function renderPitchLanes() {
@@ -3279,11 +3504,11 @@ function resolvePlaybackSliceIndex(track, { advance = false } = {}) {
   return index;
 }
 
-function resolveGrainWindow(track, sliceIndex = null) {
-  const { startTime, endTime } = state.sample.getRegionBounds();
+function resolveGrainWindow(track, sliceIndex = null, sampleLayer = state.sample) {
+  const { startTime, endTime } = sampleLayer.getRegionBounds();
   const regionDuration = Math.max(0.02, endTime - startTime);
   const grainDuration = Math.min(track.grainSize / 1000, regionDuration);
-  const slices = state.sample.getSlices(track.sliceCount);
+  const slices = sampleLayer.getSlices(track.sliceCount);
   const resolvedSliceIndex = sliceIndex
     ?? (track.grainLocation === "random" && slices.length ? Math.floor(Math.random() * slices.length) : 0);
   const anchorSlice = slices.length ? slices[resolvedSliceIndex % slices.length] : null;
@@ -3705,6 +3930,179 @@ function closeSampleBrowser() {
   syncSampleBrowserOverlay();
 }
 
+async function loadSampleManifest() {
+  try {
+    const response = await fetch(SAMPLE_MANIFEST_URL);
+    if (!response.ok) throw new Error(`request failed (${response.status})`);
+    const manifest = await response.json();
+    const entries = Array.isArray(manifest)
+      ? manifest.map(normalizeSampleEntry).filter(Boolean)
+      : [];
+    if (!entries.length) throw new Error("manifest is empty");
+    state.sampleLibrary = entries;
+    state.sampleManifestLoaded = true;
+    renderVoiceSampleOptions();
+    renderSampleLibrary();
+  } catch (error) {
+    state.sampleLibrary = SAMPLE_LIBRARY_FALLBACK;
+    state.sampleManifestLoaded = false;
+    renderVoiceSampleOptions();
+    renderSampleLibrary();
+  }
+}
+
+async function loadLibrarySampleLayer(sampleEntry) {
+  const entry = normalizeSampleEntry(sampleEntry);
+  if (!entry) throw new Error("Invalid sample entry");
+  if (sampleCache.has(entry.id)) return sampleCache.get(entry.id);
+  const layer = new SampleLayer();
+  const response = await fetch(entry.url);
+  if (!response.ok) throw new Error(`request failed (${response.status})`);
+  const data = await response.arrayBuffer();
+  await layer.loadArrayBuffer(data, state.audioContext ?? getDecodeAudioContext());
+  sampleCache.set(entry.id, layer);
+  return layer;
+}
+
+function assignDecodedLayerToVoice(sourceLayer, voiceIndex, patch = {}) {
+  const voice = state.voices[voiceIndex];
+  if (!voice || !sourceLayer?.buffer) return false;
+  const layer = getVoiceSampleLayer(voiceIndex);
+  layer.useDecodedBuffer(sourceLayer.buffer, sourceLayer.reversedBuffer);
+  Object.assign(voice, patch);
+  updateVoiceSampleRegion(voiceIndex, voice.sampleRegionStart ?? 0, voice.sampleRegionEnd ?? 1);
+  state.tracks.forEach((track, trackIndex) => {
+    if (track.voiceIndex === voiceIndex) resetTrackPlaybackState(trackIndex);
+  });
+  if (voiceIndex === state.selectedVoiceIndex) syncActiveSampleLayer();
+  return true;
+}
+
+async function assignLibrarySampleToVoice(sampleEntry, voiceIndex = state.selectedVoiceIndex, { preview = false, persist = true } = {}) {
+  const entry = normalizeSampleEntry(sampleEntry);
+  if (!entry) return false;
+  try {
+    state.sampleLoading = true;
+    syncSampleLoadingAnimation();
+    if (preview) await ensureAudio();
+    setDiagnostics(`loading ${entry.name}...`, "warn");
+    const sourceLayer = await loadLibrarySampleLayer(entry);
+    const assigned = assignDecodedLayerToVoice(sourceLayer, voiceIndex, {
+      sampleId: entry.id,
+      sampleName: entry.name,
+      sampleSource: "library",
+    });
+    if (!assigned) throw new Error("sample assignment failed");
+    state.defaultSampleLoaded = true;
+    state.currentSampleName = getVoiceSampleName();
+    syncUi();
+    drawWaveform();
+    drawChopWaveforms();
+    renderPattern();
+    if (persist) writeStoredSession();
+    if (preview) {
+      const previewPlayed = state.playback?.triggerTrack(getSelectedTrack(), undefined, null, getTrackTriggerDuration(getSelectedTrack()));
+      indicateTrackPlayback(getSelectedTrack());
+      setDiagnostics(
+        previewPlayed ? `loaded ${entry.name} and previewed ${getSelectedTrack().name}.` : `loaded ${entry.name}.`,
+        previewPlayed ? "ok" : "warn",
+      );
+    } else {
+      setDiagnostics(`loaded ${entry.name}.`, "ok");
+    }
+    return true;
+  } catch (error) {
+    setDiagnostics(`load failed for ${entry.name}: ${error.message}`, "error");
+    return false;
+  } finally {
+    state.sampleLoading = false;
+    syncSampleLoadingAnimation();
+    drawWaveform();
+    drawChopWaveforms();
+  }
+}
+
+async function assignLocalSampleToVoice(file, voiceIndex = state.selectedVoiceIndex, { preview = false } = {}) {
+  if (!file) return false;
+  const localId = `local:${Date.now()}:${file.name}`;
+  try {
+    state.sampleLoading = true;
+    syncSampleLoadingAnimation();
+    if (preview) await ensureAudio();
+    setDiagnostics(`loading ${file.name}...`, "warn");
+    const layer = new SampleLayer();
+    await layer.loadFile(file, state.audioContext ?? getDecodeAudioContext());
+    sampleCache.set(localId, layer);
+    state.sampleLibrary = [
+      ...state.sampleLibrary.filter((entry) => entry.id !== localId),
+      { id: localId, name: file.name, url: "", source: "local" },
+    ];
+    const voice = state.voices[voiceIndex];
+    if (voice) {
+      voice.sampleRegionStart = 0;
+      voice.sampleRegionEnd = 1;
+    }
+    const assigned = assignDecodedLayerToVoice(layer, voiceIndex, {
+      sampleId: localId,
+      sampleName: file.name,
+      sampleSource: "local",
+    });
+    if (!assigned) throw new Error("sample assignment failed");
+    state.currentSampleName = getVoiceSampleName();
+    renderVoiceSampleOptions();
+    syncUi();
+    drawWaveform();
+    drawChopWaveforms();
+    renderPattern();
+    writeStoredSession();
+    if (preview) {
+      const previewPlayed = state.playback?.triggerTrack(getSelectedTrack(), undefined, null, getTrackTriggerDuration(getSelectedTrack()));
+      indicateTrackPlayback(getSelectedTrack());
+      setDiagnostics(
+        previewPlayed ? `loaded ${file.name} and previewed ${getSelectedTrack().name}.` : `loaded ${file.name}.`,
+        previewPlayed ? "ok" : "warn",
+      );
+    } else {
+      setDiagnostics(`loaded ${file.name}.`, "ok");
+    }
+    return true;
+  } catch (error) {
+    setDiagnostics(`load failed for ${file.name}: ${error.message}`, "error");
+    return false;
+  } finally {
+    state.sampleLoading = false;
+    syncSampleLoadingAnimation();
+    drawWaveform();
+    drawChopWaveforms();
+  }
+}
+
+async function ensureVoiceSampleLoaded(voiceIndex, { preview = false } = {}) {
+  const voice = state.voices[voiceIndex];
+  if (!voiceUsesSample(voice)) return true;
+  const layer = getVoiceSampleLayer(voiceIndex);
+  if (layer.buffer) return true;
+  if (voice.sampleSource === "local") return false;
+  const entry = getSampleEntryById(voice.sampleId) ?? getSampleEntryById(DEFAULT_SAMPLE_ID) ?? state.sampleLibrary[0];
+  if (!entry) return false;
+  return assignLibrarySampleToVoice(entry, voiceIndex, { preview, persist: preview });
+}
+
+async function ensureSamplesForPlayback() {
+  const voiceIndexes = Array.from(new Set(
+    state.tracks
+      .filter((track) => trackUsesSample(track))
+      .map((track) => Math.max(0, Math.min(TRACK_COUNT - 1, track.voiceIndex ?? 0))),
+  ));
+  let allLoaded = true;
+  for (const voiceIndex of voiceIndexes) {
+    const loaded = await ensureVoiceSampleLoaded(voiceIndex, { preview: false });
+    allLoaded = loaded && allLoaded;
+  }
+  syncActiveSampleLayer();
+  return allLoaded;
+}
+
 async function loadSampleSource(loader, sampleName, { preview = true, ensureAudioReady = true } = {}) {
   try {
     state.sampleLoading = true;
@@ -3712,14 +4110,22 @@ async function loadSampleSource(loader, sampleName, { preview = true, ensureAudi
     drawWaveform();
     if (ensureAudioReady) await ensureAudio();
     setDiagnostics(`loading ${sampleName}...`, "warn");
-    const restoredStart = state.sample.regionStart;
-    const restoredEnd = state.sample.regionEnd;
-    await loader();
+    const voiceIndex = state.selectedVoiceIndex;
+    const voice = state.voices[voiceIndex];
+    const layer = getVoiceSampleLayer(voiceIndex);
+    const restoredStart = voice?.sampleRegionStart ?? layer.regionStart;
+    const restoredEnd = voice?.sampleRegionEnd ?? layer.regionEnd;
+    await loader(layer, voiceIndex);
     state.defaultSampleLoaded = true;
     state.currentSampleName = sampleName;
-    state.sample.setRegion(restoredStart, restoredEnd);
+    if (voice) {
+      voice.sampleName = sampleName;
+      updateVoiceSampleRegion(voiceIndex, restoredStart, restoredEnd);
+    }
+    syncActiveSampleLayer();
     syncUi();
     drawWaveform();
+    drawChopWaveforms();
     renderPattern();
     writeStoredSession();
 
@@ -3747,25 +4153,20 @@ async function loadSampleSource(loader, sampleName, { preview = true, ensureAudi
 
 async function loadSampleFromLibrary(sampleEntry) {
   if (!sampleEntry) return;
-  const loaded = await loadSampleSource(async () => {
-    const response = await fetch(sampleEntry.url);
-    if (!response.ok) throw new Error(`request failed (${response.status})`);
-    const data = await response.arrayBuffer();
-    await state.sample.loadArrayBuffer(data, state.audioContext ?? getDecodeAudioContext());
-  }, sampleEntry.name);
+  const loaded = await assignLibrarySampleToVoice(sampleEntry, state.selectedVoiceIndex, { preview: true });
   if (loaded) closeSampleBrowser();
 }
 
 async function loadSampleFromFile(file) {
   if (!file) return;
-  const loaded = await loadSampleSource(() => state.sample.loadFile(file, state.audioContext), file.name);
+  const loaded = await assignLocalSampleToVoice(file, state.selectedVoiceIndex, { preview: true });
   if (loaded) closeSampleBrowser();
 }
 
 function renderSampleLibrary() {
   if (!ui.sampleLibraryList) return;
   ui.sampleLibraryList.innerHTML = "";
-  SAMPLE_LIBRARY.forEach((sampleEntry) => {
+  state.sampleLibrary.forEach((sampleEntry) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "sample-library-item";
@@ -3818,7 +4219,7 @@ function updateOverviewRegionFromPointer(clientX) {
   const normalized = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   const width = state.overviewDrag.width;
   const nextStart = Math.max(0, Math.min(1 - width, normalized - state.overviewDrag.offset));
-  state.sample.setRegion(nextStart, nextStart + width);
+  updateVoiceSampleRegion(state.selectedVoiceIndex, nextStart, nextStart + width);
   syncUi();
   drawWaveform();
   writeStoredSession();
@@ -3940,24 +4341,19 @@ function setTrackIndicator(trackIndex, start, end, durationMs = 180) {
 }
 
 function indicateTrackPlayback(track, sliceIndex = null) {
-  if (!state.sample.buffer) return;
   const trackIndex = track.id - 1;
   const playbackTrack = getTrackPlaybackSettings(track);
+  const sampleLayer = getVoiceSampleLayer(playbackTrack.voiceIndex);
+  if (!sampleLayer.buffer) return;
 
   if (playbackTrack.mode === "chop") {
-    const slices = state.sample.getSlices(playbackTrack.sliceCount);
-    if (!slices.length) return;
-    const resolvedIndex = sliceIndex ?? (trackIndex % slices.length);
-    const slice = slices[resolvedIndex % slices.length];
-    const { startTime, endTime } = state.sample.getRegionBounds();
-    const sliceDuration = Math.max(0.03, slice.duration * (playbackTrack.chopGate / 100));
-    const fixedStart = startTime + Math.max(0, endTime - startTime - sliceDuration) * ((playbackTrack.voicePlacement ?? 50) / 100);
-    const indicatorStart = playbackTrack.grainLocation === "fixed" ? fixedStart : slice.start;
-    setTrackIndicator(trackIndex, indicatorStart, indicatorStart + sliceDuration, 220);
+    const pitchMidi = state.trackPlaybackState[trackIndex]?.lastTriggeredPitchMidi ?? getTrackPitchMidi(track);
+    const window = getChopPlaybackWindow(getTrackVoice(track), sampleLayer, pitchMidi);
+    if (window) setTrackIndicator(trackIndex, window.startTime, window.endTime, 220);
     return;
   }
 
-  const grainWindow = resolveGrainWindow(playbackTrack, sliceIndex);
+  const grainWindow = resolveGrainWindow(playbackTrack, sliceIndex, sampleLayer);
   setTrackIndicator(trackIndex, grainWindow.start, grainWindow.end, 160);
 }
 
@@ -4191,6 +4587,252 @@ function drawWaveform() {
   });
 
   drawWaveformOverview();
+}
+
+function getVoiceSampleRegionBounds(voice = getSelectedVoice(), layer = getSelectedVoiceSampleLayer()) {
+  if (!layer?.buffer) return { startTime: 0, endTime: 0, duration: 0 };
+  const start = Math.max(0, Math.min(0.99, voice?.sampleRegionStart ?? layer.regionStart ?? 0));
+  const end = Math.max(start + 0.01, Math.min(1, voice?.sampleRegionEnd ?? layer.regionEnd ?? 1));
+  const startTime = layer.buffer.duration * start;
+  const endTime = layer.buffer.duration * end;
+  return {
+    startTime,
+    endTime,
+    duration: Math.max(0.001, endTime - startTime),
+  };
+}
+
+function getChopPlayheadTime(voice = getSelectedVoice(), layer = getSelectedVoiceSampleLayer(), pitchMidi = PITCH_LANE_REFERENCE_MIDI) {
+  const { startTime, duration } = getVoiceSampleRegionBounds(voice, layer);
+  if (!layer?.buffer) return 0;
+  if (voice.chopPlayheadBehavior === "random") {
+    return startTime + Math.random() * duration;
+  }
+  if (voice.chopPlayheadBehavior === "note") {
+    const noteOffset = Math.max(0, Math.min(PITCH_LANE_NOTE_COUNT - 1, (Number(pitchMidi) || PITCH_LANE_REFERENCE_MIDI) - PITCH_LANE_START_MIDI));
+    return startTime + (noteOffset / Math.max(1, PITCH_LANE_NOTE_COUNT - 1)) * duration;
+  }
+  return startTime + (Math.max(0, Math.min(100, voice.chopPlayheadPosition ?? 0)) / 100) * duration;
+}
+
+function getChopPlaybackWindow(voice = getSelectedVoice(), layer = getSelectedVoiceSampleLayer(), pitchMidi = PITCH_LANE_REFERENCE_MIDI) {
+  if (!layer?.buffer || !voice) return null;
+  const { startTime, endTime, duration: regionDuration } = getVoiceSampleRegionBounds(voice, layer);
+  if (regionDuration <= 0) return null;
+  const requestedLength = regionDuration * (clampNumber(voice.chopPlaybackLength, 1, 100, 25) / 100);
+  const minimumLength = Math.min(regionDuration, 0.03);
+  const playbackLength = Math.max(minimumLength, Math.min(regionDuration, requestedLength));
+  const playhead = Math.max(startTime, Math.min(endTime, getChopPlayheadTime(voice, layer, pitchMidi)));
+
+  if (voice.reverse) {
+    const segmentEnd = Math.max(startTime + minimumLength, Math.min(endTime, playhead));
+    const segmentStart = Math.max(startTime, segmentEnd - playbackLength);
+    const duration = Math.max(minimumLength, segmentEnd - segmentStart);
+    return {
+      startTime: segmentStart,
+      endTime: segmentStart + duration,
+      duration,
+      playhead,
+    };
+  }
+
+  const segmentStart = Math.max(startTime, Math.min(Math.max(startTime, endTime - minimumLength), playhead));
+  const duration = Math.max(minimumLength, Math.min(playbackLength, endTime - segmentStart));
+  return {
+    startTime: segmentStart,
+    endTime: segmentStart + duration,
+    duration,
+    playhead,
+  };
+}
+
+function drawWaveformIntoCanvas({
+  canvas,
+  layer,
+  viewportStartTime = 0,
+  viewportEndTime = layer?.buffer?.duration ?? 1,
+  regionStartTime = null,
+  regionEndTime = null,
+  playheadTime = null,
+  emptyMessage = "Load a sample to edit its window.",
+}) {
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  const ctx = canvas.getContext("2d");
+  const { width, height } = canvas;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(255,255,255,0.03)";
+  ctx.fillRect(0, 0, width, height);
+
+  if (!layer?.buffer) {
+    ctx.fillStyle = "rgba(232,242,255,0.65)";
+    ctx.font = '16px "Lexend Deca", "Avenir Next", sans-serif';
+    ctx.fillText(emptyMessage, 18, height / 2);
+    return;
+  }
+
+  const data = layer.buffer.getChannelData(0);
+  const sampleRate = layer.buffer.sampleRate;
+  const safeViewportStart = Math.max(0, Math.min(layer.buffer.duration, viewportStartTime));
+  const safeViewportEnd = Math.max(safeViewportStart + 0.001, Math.min(layer.buffer.duration, viewportEndTime));
+  const viewportStartSample = Math.max(0, Math.floor(safeViewportStart * sampleRate));
+  const viewportEndSample = Math.min(data.length, Math.ceil(safeViewportEnd * sampleRate));
+  const viewportSampleLength = Math.max(1, viewportEndSample - viewportStartSample);
+  const samplesPerPixel = Math.max(1, Math.ceil(viewportSampleLength / width));
+  let peak = 0.0001;
+  for (let sampleIndex = viewportStartSample; sampleIndex < viewportEndSample; sampleIndex += 1) {
+    peak = Math.max(peak, Math.abs(data[sampleIndex] ?? 0));
+  }
+
+  const toX = (time) => ((time - safeViewportStart) / Math.max(0.001, safeViewportEnd - safeViewportStart)) * width;
+  if (Number.isFinite(regionStartTime) && Number.isFinite(regionEndTime)) {
+    const regionStartX = Math.max(0, Math.min(width, toX(regionStartTime)));
+    const regionEndX = Math.max(regionStartX, Math.min(width, toX(regionEndTime)));
+    ctx.fillStyle = "rgba(255, 184, 77, 0.13)";
+    ctx.fillRect(regionStartX, 0, Math.max(1, regionEndX - regionStartX), height);
+  }
+
+  const centerY = height / 2;
+  const waveformScale = height * 0.38 / peak;
+  ctx.strokeStyle = "rgba(210, 227, 255, 0.58)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 0; x < width; x += 1) {
+    const sliceStart = viewportStartSample + x * samplesPerPixel;
+    if (sliceStart >= viewportEndSample) break;
+    const sliceEnd = Math.min(viewportEndSample, sliceStart + samplesPerPixel);
+    let min = 1;
+    let max = -1;
+    let hasSample = false;
+    for (let sampleIndex = sliceStart; sampleIndex < sliceEnd; sampleIndex += 1) {
+      const sample = data[sampleIndex];
+      if (sample === undefined) continue;
+      hasSample = true;
+      if (sample < min) min = sample;
+      if (sample > max) max = sample;
+    }
+    if (!hasSample) continue;
+    ctx.moveTo(x, centerY + min * waveformScale);
+    ctx.lineTo(x, centerY + max * waveformScale);
+  }
+  ctx.stroke();
+
+  if (Number.isFinite(regionStartTime) && Number.isFinite(regionEndTime)) {
+    const regionStartX = Math.max(0, Math.min(width, toX(regionStartTime)));
+    const regionEndX = Math.max(regionStartX + 1, Math.min(width, toX(regionEndTime)));
+    ctx.strokeStyle = "rgba(255, 184, 77, 0.92)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(regionStartX, 1, Math.max(1, regionEndX - regionStartX), height - 2);
+
+    ctx.fillStyle = "rgba(255, 184, 77, 0.95)";
+    ctx.fillRect(regionStartX - 2, 0, 4, height);
+    ctx.fillRect(regionEndX - 2, 0, 4, height);
+  }
+
+  if (Number.isFinite(playheadTime)) {
+    const playheadX = Math.max(0, Math.min(width, toX(playheadTime)));
+    ctx.strokeStyle = "rgba(79, 196, 184, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(playheadX, 0);
+    ctx.lineTo(playheadX, height);
+    ctx.stroke();
+  }
+}
+
+function drawChopWaveforms() {
+  if (!ui.chopWaveform || !ui.chopWaveformOverview) return;
+  const voice = getSelectedVoice();
+  const layer = getSelectedVoiceSampleLayer();
+  if (voice?.mode !== "chop") {
+    drawWaveformIntoCanvas({ canvas: ui.chopWaveform, layer, emptyMessage: "" });
+    drawWaveformIntoCanvas({ canvas: ui.chopWaveformOverview, layer, emptyMessage: "" });
+    return;
+  }
+  syncVoiceSampleRegion(state.selectedVoiceIndex);
+  const { startTime, endTime } = getVoiceSampleRegionBounds(voice, layer);
+  const playheadTime = getChopPlayheadTime(voice, layer, PITCH_LANE_REFERENCE_MIDI);
+  drawWaveformIntoCanvas({
+    canvas: ui.chopWaveform,
+    layer,
+    viewportStartTime: startTime,
+    viewportEndTime: endTime,
+    playheadTime,
+  });
+  drawWaveformIntoCanvas({
+    canvas: ui.chopWaveformOverview,
+    layer,
+    viewportStartTime: 0,
+    viewportEndTime: layer?.buffer?.duration ?? 1,
+    regionStartTime: startTime,
+    regionEndTime: endTime,
+    playheadTime,
+  });
+}
+
+function getChopOverviewPointerState(clientX) {
+  const canvas = ui.chopWaveformOverview;
+  const layer = getSelectedVoiceSampleLayer();
+  const voice = getSelectedVoice();
+  if (!(canvas instanceof HTMLCanvasElement) || !layer?.buffer || !voice) return null;
+  const rect = canvas.getBoundingClientRect();
+  const relativeX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+  const normalized = rect.width > 0 ? relativeX / rect.width : 0;
+  const regionStart = voice.sampleRegionStart ?? 0;
+  const regionEnd = voice.sampleRegionEnd ?? 1;
+  const handleWidth = Math.min(0.045, 10 / Math.max(1, rect.width));
+  const nearStart = Math.abs(normalized - regionStart) <= handleWidth;
+  const nearEnd = Math.abs(normalized - regionEnd) <= handleWidth;
+  return {
+    normalized,
+    regionStart,
+    regionEnd,
+    nearStart,
+    nearEnd,
+    insideRegion: normalized >= regionStart && normalized <= regionEnd,
+  };
+}
+
+function updateChopSampleWindowFromPointer(clientX) {
+  const pointer = getChopOverviewPointerState(clientX);
+  const drag = state.chopSampleDrag;
+  if (!pointer || !drag.active) return;
+  const minWidth = 0.01;
+  let nextStart = pointer.regionStart;
+  let nextEnd = pointer.regionEnd;
+  if (drag.mode === "start") {
+    nextStart = Math.max(0, Math.min(nextEnd - minWidth, pointer.normalized));
+  } else if (drag.mode === "end") {
+    nextEnd = Math.min(1, Math.max(nextStart + minWidth, pointer.normalized));
+  } else {
+    const width = drag.width;
+    nextStart = Math.max(0, Math.min(1 - width, pointer.normalized - drag.offset));
+    nextEnd = nextStart + width;
+  }
+  updateVoiceSampleRegion(state.selectedVoiceIndex, nextStart, nextEnd);
+  syncUi();
+  drawWaveform();
+  writeStoredSession();
+}
+
+function updateChopOverviewCursor(clientX = null) {
+  const canvas = ui.chopWaveformOverview;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  canvas.classList.toggle("is-dragging", state.chopSampleDrag.active);
+  canvas.classList.remove("is-region-draggable", "is-region-resizable");
+  if (state.chopSampleDrag.active || clientX === null) return;
+  const pointer = getChopOverviewPointerState(clientX);
+  canvas.classList.toggle("is-region-resizable", Boolean(pointer?.nearStart || pointer?.nearEnd));
+  canvas.classList.toggle("is-region-draggable", Boolean(pointer?.insideRegion && !pointer.nearStart && !pointer.nearEnd));
+}
+
+function resetChopSampleDrag() {
+  state.chopSampleDrag = {
+    active: false,
+    pointerId: null,
+    mode: null,
+    offset: 0,
+    width: 1,
+  };
 }
 
 function updateCurrentStep(activeStep = -1) {
@@ -4828,9 +5470,11 @@ function renderPattern(activeStep = state.currentTransportStep) {
 }
 
 function syncUi() {
+  syncActiveSampleLayer();
   const track = getSelectedTrack();
   const voice = getSelectedVoice();
   renderPatternVoiceOptions();
+  renderVoiceSampleOptions();
   ui.sliceCountValue.textContent = String(voice.sliceCount);
   ui.mode.value = voice.mode;
   ui.grainLocation.value = voice.grainLocation;
@@ -4850,6 +5494,23 @@ function syncUi() {
   ui.chopGate.value = String(voice.chopGate);
   ui.chopGateValue.textContent = `${voice.chopGate}%`;
   ui.reverse.checked = voice.reverse;
+  if (ui.chopPlayheadBehavior) ui.chopPlayheadBehavior.value = voice.chopPlayheadBehavior;
+  if (ui.chopPlayheadPosition) ui.chopPlayheadPosition.value = String(voice.chopPlayheadPosition);
+  if (ui.chopPlayheadPositionValue) ui.chopPlayheadPositionValue.textContent = `${Math.round(voice.chopPlayheadPosition)}%`;
+  ui.chopPlayheadPosition?.toggleAttribute("disabled", voice.chopPlayheadBehavior !== "fixed");
+  ui.chopPlayheadPositionField?.classList.toggle("is-disabled", voice.chopPlayheadBehavior !== "fixed");
+  if (ui.chopPlaybackLength) ui.chopPlaybackLength.value = String(voice.chopPlaybackLength);
+  if (ui.chopPlaybackLengthValue) ui.chopPlaybackLengthValue.textContent = `${Math.round(voice.chopPlaybackLength)}%`;
+  ui.chopReverseToggle?.classList.toggle("active", voice.reverse);
+  ui.chopReverseToggle?.setAttribute("aria-pressed", String(voice.reverse));
+  ui.chopReverseToggle?.setAttribute("aria-label", `Reverse playback ${voice.reverse ? "on" : "off"}`);
+  ui.chopUseNotePitchToggle?.classList.toggle("active", voice.chopUseNotePitch);
+  ui.chopUseNotePitchToggle?.setAttribute("aria-pressed", String(voice.chopUseNotePitch));
+  ui.chopUseNotePitchToggle?.setAttribute("aria-label", `Use note pitch ${voice.chopUseNotePitch ? "on" : "off"}`);
+  ui.chopPlayOneShot?.classList.toggle("active", voice.chopPlaybackMode !== "loop");
+  ui.chopPlayOneShot?.setAttribute("aria-pressed", String(voice.chopPlaybackMode !== "loop"));
+  ui.chopPlayLoop?.classList.toggle("active", voice.chopPlaybackMode === "loop");
+  ui.chopPlayLoop?.setAttribute("aria-pressed", String(voice.chopPlaybackMode === "loop"));
   ui.synthWave.value = voice.synthWave;
   ui.synthWaveShape.value = String(voice.synthWaveShape);
   ui.synthWaveShapeValue.textContent = `${Math.round(voice.synthWaveShape)}%`;
@@ -4867,10 +5528,12 @@ function syncUi() {
   ui.pitch.disabled = true;
   ui.voicePitchField.classList.add("is-disabled");
   const synthMode = voice.mode === "synth";
+  const chopMode = voice.mode === "chop";
   const sampleVoiceModeLabel = voice.mode === "chop" ? "Chop" : "Grain";
   const sampleVoiceTitle = document.querySelector("#sample-voice-group-title");
   if (sampleVoiceTitle instanceof HTMLElement) sampleVoiceTitle.textContent = sampleVoiceModeLabel;
-  ui.sampleVoiceSettingsGroup.classList.toggle("ui-hidden", synthMode);
+  ui.sampleVoiceSettingsGroup.classList.toggle("ui-hidden", synthMode || chopMode);
+  ui.chopSettingsGroup?.classList.toggle("ui-hidden", !chopMode);
   ui.synthSettingsGroup.classList.toggle("ui-hidden", !synthMode);
   ui.bpm.value = String(state.bpm);
   ui.bpmValue.textContent = String(state.bpm);
@@ -4897,7 +5560,9 @@ function syncUi() {
 
   if (!ui.sampleStatus) return;
 
+  state.currentSampleName = getVoiceSampleName(voice);
   ui.sampleStatus.textContent = state.sample.buffer ? state.currentSampleName : "";
+  drawChopWaveforms();
   refreshRangeFills();
 }
 
@@ -4944,10 +5609,26 @@ function updateSelectedTrackPattern(patch) {
 
 function updateSelectedVoice(patch) {
   Object.assign(getSelectedVoice(), patch);
+  const resetKeys = [
+    "mode",
+    "grainLocation",
+    "sliceCount",
+    "sampleId",
+    "sampleRegionStart",
+    "sampleRegionEnd",
+    "reverse",
+    "voicePlaybackMode",
+    "chopPlayheadBehavior",
+    "chopPlayheadPosition",
+    "chopPlaybackLength",
+    "chopUseNotePitch",
+    "chopPlaybackMode",
+  ];
+  const shouldResetPlayback = resetKeys.some((key) => key in patch);
   state.tracks.forEach((track, index) => {
     if (track.voiceIndex !== state.selectedVoiceIndex) return;
     state.playback?.updateTrackBus(index, track);
-    if ("grainLocation" in patch || "sliceCount" in patch) resetTrackPlaybackState(index);
+    if (shouldResetPlayback) resetTrackPlaybackState(index);
   });
   syncUi();
   renderTrackSelector();
@@ -5067,6 +5748,7 @@ async function loadSessionFile(file) {
     if (!source) throw new Error("Unsupported session file");
     if (isTransportRunning()) state.transport.stop();
     applyStoredSession(source);
+    await ensureSamplesForPlayback();
     state.workspaceTab = "session";
     state.voiceNameOverlay.open = false;
     state.sessionClearOverlay.open = false;
@@ -5113,13 +5795,15 @@ function clearCurrentSessionSettings() {
   state.workspaceTab = "session";
   state.tracks = Array.from({ length: TRACK_COUNT }, (_, index) => createTrack(index + 1));
   state.voices = Array.from({ length: TRACK_COUNT }, (_, index) => createVoiceConfig(index + 1));
+  resetVoiceSampleLayers();
+  state.defaultSampleLoaded = false;
   state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track));
   state.trackIndicators = Array.from({ length: TRACK_COUNT }, () => null);
   state.pitchStepSelection = { trackIndex: null, cellIndex: null };
   state.currentTransportStep = -1;
   state.mixVolume = 0.9;
   state.composer = createDefaultComposerState();
-  state.sample.setRegion(0, 1);
+  updateVoiceSampleRegion(state.selectedVoiceIndex, 0, 1);
   state.filterOverlay.open = false;
   state.delayOverlay.open = false;
   state.driftOverlay.open = false;
@@ -5212,20 +5896,39 @@ ui.sampleBrowserInput.addEventListener("change", async (event) => {
   ui.sampleBrowserInput.value = "";
 });
 
+ui.voiceSampleSelect?.addEventListener("change", async () => {
+  const sampleId = ui.voiceSampleSelect.value;
+  if (sampleId === SAMPLE_LOAD_NEW_VALUE) {
+    ui.voiceSampleSelect.value = getSelectedVoice()?.sampleId ?? DEFAULT_SAMPLE_ID;
+    ui.voiceSampleInput?.click();
+    return;
+  }
+  const sampleEntry = getSampleEntryById(sampleId);
+  if (!sampleEntry) return;
+  await assignLibrarySampleToVoice(sampleEntry, state.selectedVoiceIndex, { preview: true });
+});
+
+ui.voiceSampleInput?.addEventListener("change", async (event) => {
+  const [file] = event.target.files ?? [];
+  if (!file) return;
+  await assignLocalSampleToVoice(file, state.selectedVoiceIndex, { preview: true });
+  event.target.value = "";
+});
+
 document.addEventListener("input", (event) => {
   if (!(event.target instanceof HTMLInputElement) || event.target.type !== "range") return;
   updateRangeFill(event.target);
 });
 
 ui.regionStart.addEventListener("input", () => {
-  state.sample.setRegion(Number(ui.regionStart.value) / 1000, Number(ui.regionEnd.value) / 1000);
+  updateVoiceSampleRegion(state.selectedVoiceIndex, Number(ui.regionStart.value) / 1000, Number(ui.regionEnd.value) / 1000);
   syncUi();
   drawWaveform();
   writeStoredSession();
 });
 
 ui.regionEnd.addEventListener("input", () => {
-  state.sample.setRegion(Number(ui.regionStart.value) / 1000, Number(ui.regionEnd.value) / 1000);
+  updateVoiceSampleRegion(state.selectedVoiceIndex, Number(ui.regionStart.value) / 1000, Number(ui.regionEnd.value) / 1000);
   syncUi();
   drawWaveform();
   writeStoredSession();
@@ -5266,6 +5969,13 @@ ui.mode.addEventListener("change", () => updateSelectedVoice({ mode: ui.mode.val
 ui.grainLocation.addEventListener("change", () => updateSelectedVoice({ grainLocation: ui.grainLocation.value }));
 ui.voicePlacement.addEventListener("input", () => updateSelectedVoice({ voicePlacement: Number(ui.voicePlacement.value) }));
 ui.voicePlaybackMode.addEventListener("change", () => updateSelectedVoice({ voicePlaybackMode: ui.voicePlaybackMode.value }));
+ui.chopPlayheadBehavior?.addEventListener("change", () => updateSelectedVoice({ chopPlayheadBehavior: ui.chopPlayheadBehavior.value }));
+ui.chopPlayheadPosition?.addEventListener("input", () => updateSelectedVoice({ chopPlayheadPosition: Number(ui.chopPlayheadPosition.value) }));
+ui.chopPlaybackLength?.addEventListener("input", () => updateSelectedVoice({ chopPlaybackLength: Number(ui.chopPlaybackLength.value) }));
+ui.chopReverseToggle?.addEventListener("click", () => updateSelectedVoice({ reverse: !getSelectedVoice().reverse }));
+ui.chopUseNotePitchToggle?.addEventListener("click", () => updateSelectedVoice({ chopUseNotePitch: !getSelectedVoice().chopUseNotePitch }));
+ui.chopPlayOneShot?.addEventListener("click", () => updateSelectedVoice({ chopPlaybackMode: "one-shot" }));
+ui.chopPlayLoop?.addEventListener("click", () => updateSelectedVoice({ chopPlaybackMode: "loop" }));
 ui.trackBars.addEventListener("input", () => updateSelectedTrackPattern({ barCount: Number(ui.trackBars.value) }));
 ui.trackSteps.addEventListener("input", () => updateSelectedTrackPattern({ stepCount: Number(ui.trackSteps.value) }));
 ui.trackPlaybackMode.addEventListener("change", () => updateSelectedTrackPattern({ playbackMode: ui.trackPlaybackMode.value }));
@@ -5592,11 +6302,60 @@ ui.waveformOverview.addEventListener("pointerleave", () => {
   if (!state.overviewDrag.active) updateOverviewCursor();
 });
 
+ui.chopWaveformOverview?.addEventListener("pointerdown", (event) => {
+  const pointerState = getChopOverviewPointerState(event.clientX);
+  if (!pointerState) return;
+  const mode = pointerState.nearStart
+    ? "start"
+    : pointerState.nearEnd
+      ? "end"
+      : pointerState.insideRegion
+        ? "move"
+        : null;
+  if (!mode) return;
+  event.preventDefault();
+  state.chopSampleDrag = {
+    active: true,
+    pointerId: event.pointerId,
+    mode,
+    offset: pointerState.normalized - pointerState.regionStart,
+    width: pointerState.regionEnd - pointerState.regionStart,
+  };
+  ui.chopWaveformOverview.setPointerCapture(event.pointerId);
+  updateChopOverviewCursor();
+});
+
+ui.chopWaveformOverview?.addEventListener("pointermove", (event) => {
+  if (state.chopSampleDrag.active && state.chopSampleDrag.pointerId === event.pointerId) {
+    event.preventDefault();
+    updateChopSampleWindowFromPointer(event.clientX);
+    return;
+  }
+  updateChopOverviewCursor(event.clientX);
+});
+
+ui.chopWaveformOverview?.addEventListener("pointerup", (event) => {
+  if (state.chopSampleDrag.active && state.chopSampleDrag.pointerId === event.pointerId) {
+    resetChopSampleDrag();
+    ui.chopWaveformOverview.releasePointerCapture(event.pointerId);
+  }
+  updateChopOverviewCursor(event.clientX);
+});
+
+ui.chopWaveformOverview?.addEventListener("pointercancel", () => {
+  resetChopSampleDrag();
+  updateChopOverviewCursor();
+});
+
+ui.chopWaveformOverview?.addEventListener("pointerleave", () => {
+  if (!state.chopSampleDrag.active) updateChopOverviewCursor();
+});
+
 ui.transportToggle.addEventListener("click", async () => {
   try {
     await ensureAudio();
-    if (!state.sample.buffer && !state.defaultSampleLoaded && hasAnySampleBasedTracks()) {
-      await loadDefaultSample();
+    if (hasAnySampleBasedTracks()) {
+      await ensureSamplesForPlayback();
     }
     if (isTransportRunning()) {
       state.transport.stop();
@@ -5605,8 +6364,8 @@ ui.transportToggle.addEventListener("click", async () => {
       setDiagnostics("sequence paused.", "warn");
       return;
     }
-    if (!state.sample.buffer && hasAnySampleBasedTracks()) {
-      setDiagnostics("load a sample before starting the sequence.", "warn");
+    if (hasMissingSampleBasedTracks()) {
+      setDiagnostics("load a sample for every sample-based voice before starting the sequence.", "warn");
       return;
     }
     state.transport.start();
@@ -5657,14 +6416,14 @@ window.addEventListener("keydown", async (event) => {
   event.preventDefault();
   try {
     await ensureAudio();
-    if (!state.sample.buffer && !state.defaultSampleLoaded && trackUsesSample(getSelectedTrack())) {
-      await loadDefaultSample();
+    const track = getSelectedTrack();
+    if (trackUsesSample(track)) {
+      await ensureVoiceSampleLoaded(track.voiceIndex, { preview: false });
     }
-    if (!state.sample.buffer && trackUsesSample(getSelectedTrack())) {
+    if (trackUsesSample(track) && !trackHasLoadedSample(track)) {
       setDiagnostics("space trigger ignored because no sample is loaded.", "warn");
       return;
     }
-    const track = getSelectedTrack();
     if (!isTrackAudible(track)) {
       setDiagnostics(`${track.name} is ${track.muted ? "muted" : "not soloed"}.`, "warn");
       return;
