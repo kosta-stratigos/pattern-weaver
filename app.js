@@ -1167,7 +1167,7 @@ class PlaybackLayer {
     const voice = this.state.voices[voiceIndex] ?? getTrackVoice(track);
     const sampleLayer = getVoiceSampleLayer(voiceIndex);
     const pitchMidi = pitchOverride?.pitchMidi ?? PITCH_LANE_REFERENCE_MIDI;
-    const window = getChopPlaybackWindow(voice, sampleLayer, pitchMidi);
+    const window = getChopPlaybackWindow(voice, sampleLayer, pitchMidi, track);
     if (!window) return false;
 
     const rate = voice.chopUseNotePitch
@@ -3363,6 +3363,7 @@ function renderPitchLanes() {
     scaleSelect.addEventListener("change", () => {
       track.scaleMode = normalizeScaleMode(scaleSelect.value, track.scaleMode);
       quantizeTrackStepPitches(track);
+      state.chopPlayheadPositions[track.voiceIndex] = null;
       renderPitchLanes();
       renderPattern();
       writeStoredSession();
@@ -4628,20 +4629,52 @@ function getVoiceSampleRegionBounds(voice = getSelectedVoice(), layer = getSelec
   };
 }
 
-function getChopPlayheadTime(voice = getSelectedVoice(), layer = getSelectedVoiceSampleLayer(), pitchMidi = PITCH_LANE_REFERENCE_MIDI) {
+function getChopJumpNotePositions(trackContext = null) {
+  if (!trackContext?.pitchFill) return null;
+  return [...new Set(getTrackPitchFillNotes(trackContext, { pitchFill: trackContext.pitchFill }))].sort((a, b) => a - b);
+}
+
+function getNearestNotePositionIndex(notes, pitchMidi) {
+  if (!notes?.length) return 0;
+  const targetMidi = Number.isFinite(Number(pitchMidi)) ? Number(pitchMidi) : PITCH_LANE_REFERENCE_MIDI;
+  let nearestIndex = 0;
+  let nearestDistance = Math.abs(notes[0] - targetMidi);
+  for (let index = 1; index < notes.length; index += 1) {
+    const distance = Math.abs(notes[index] - targetMidi);
+    if (distance >= nearestDistance) continue;
+    nearestDistance = distance;
+    nearestIndex = index;
+  }
+  return nearestIndex;
+}
+
+function getChopTrackContextForVoice(voiceIndex = state.selectedVoiceIndex) {
+  const selectedTrack = getSelectedTrack();
+  const sourceTrack = selectedTrack?.voiceIndex === voiceIndex
+    ? selectedTrack
+    : state.tracks.find((track) => track.voiceIndex === voiceIndex);
+  return sourceTrack ? getTrackPlaybackSettings(sourceTrack) : null;
+}
+
+function getChopPlayheadTime(voice = getSelectedVoice(), layer = getSelectedVoiceSampleLayer(), pitchMidi = PITCH_LANE_REFERENCE_MIDI, trackContext = null) {
   const { startTime, duration } = getVoiceSampleRegionBounds(voice, layer);
   if (!layer?.buffer) return 0;
   if (voice.chopPlayheadBehavior === "random") {
     return startTime + Math.random() * duration;
   }
   if (voice.chopPlayheadBehavior === "note") {
+    const activeNotes = getChopJumpNotePositions(trackContext);
+    if (activeNotes?.length) {
+      const noteIndex = getNearestNotePositionIndex(activeNotes, pitchMidi);
+      return startTime + (noteIndex / Math.max(1, activeNotes.length - 1)) * duration;
+    }
     const noteOffset = Math.max(0, Math.min(PITCH_LANE_NOTE_COUNT - 1, (Number(pitchMidi) || PITCH_LANE_REFERENCE_MIDI) - PITCH_LANE_START_MIDI));
     return startTime + (noteOffset / Math.max(1, PITCH_LANE_NOTE_COUNT - 1)) * duration;
   }
   return startTime + (Math.max(0, Math.min(100, voice.chopPlayheadPosition ?? 0)) / 100) * duration;
 }
 
-function getChopPlaybackWindow(voice = getSelectedVoice(), layer = getSelectedVoiceSampleLayer(), pitchMidi = PITCH_LANE_REFERENCE_MIDI) {
+function getChopPlaybackWindow(voice = getSelectedVoice(), layer = getSelectedVoiceSampleLayer(), pitchMidi = PITCH_LANE_REFERENCE_MIDI, trackContext = null) {
   if (!layer?.buffer || !voice) return null;
   const { startTime, endTime, duration: regionDuration } = getVoiceSampleRegionBounds(voice, layer);
   if (regionDuration <= 0) return null;
@@ -4652,7 +4685,7 @@ function getChopPlaybackWindow(voice = getSelectedVoice(), layer = getSelectedVo
   ) / 1000;
   const minimumLength = Math.min(regionDuration, 0.03);
   const playbackLength = Math.max(minimumLength, Math.min(regionDuration, requestedLength));
-  const playhead = Math.max(startTime, Math.min(endTime, getChopPlayheadTime(voice, layer, pitchMidi)));
+  const playhead = Math.max(startTime, Math.min(endTime, getChopPlayheadTime(voice, layer, pitchMidi, trackContext)));
 
   if (voice.reverse) {
     const segmentEnd = Math.max(startTime + minimumLength, Math.min(endTime, playhead));
@@ -4684,7 +4717,7 @@ function getChopDisplayPlayheadTime(voice = getSelectedVoice(), layer = getSelec
     return Math.max(startTime, Math.min(endTime, triggeredPlayhead));
   }
   if (voice.chopPlayheadBehavior === "random") return null;
-  return getChopPlayheadTime(voice, layer, PITCH_LANE_REFERENCE_MIDI);
+  return getChopPlayheadTime(voice, layer, PITCH_LANE_REFERENCE_MIDI, getChopTrackContextForVoice(voiceIndex));
 }
 
 function drawWaveformIntoCanvas({
@@ -5636,6 +5669,7 @@ function updateSelectedTrackPattern(patch) {
   }
   if ("pitchFill" in patch) {
     applyTrackPitchFill(track);
+    state.chopPlayheadPositions[track.voiceIndex] = null;
   }
   syncUi();
   renderTrackSelector();
