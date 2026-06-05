@@ -221,6 +221,10 @@ const TRACK_ENVELOPE_TYPES = ["adsr", "ad", "looping", "hold"];
 const SYNTH_WAVES = ["sine", "triangle", "sawtooth", "square"];
 const CHOP_PLAYHEAD_BEHAVIORS = ["fixed", "random", "note"];
 const CHOP_PLAYBACK_MODES = ["one-shot", "loop"];
+const CHOP_PLAYBACK_LENGTH_MIN_MS = 50;
+const CHOP_PLAYBACK_LENGTH_MAX_MS = 500;
+const CHOP_PLAYBACK_LENGTH_DEFAULT_MS = 150;
+const CHOP_PLAYBACK_LENGTH_UNIT = "ms";
 const SCALE_OPTIONS = [
   { value: "chromatic", label: "Chromatic", intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
   { value: "ionian", label: "Ionian (I)", intervals: [0, 2, 4, 5, 7, 9, 11] },
@@ -281,6 +285,19 @@ function clampNumber(value, min, max, fallback) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
+}
+
+function normalizeChopPlaybackLength(value, fallback = CHOP_PLAYBACK_LENGTH_DEFAULT_MS, unit = null) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  if (unit === CHOP_PLAYBACK_LENGTH_UNIT) {
+    return Math.round(clampNumber(parsed, CHOP_PLAYBACK_LENGTH_MIN_MS, CHOP_PLAYBACK_LENGTH_MAX_MS, fallback));
+  }
+  if (parsed > 0 && parsed <= 100) {
+    const range = CHOP_PLAYBACK_LENGTH_MAX_MS - CHOP_PLAYBACK_LENGTH_MIN_MS;
+    return Math.round(CHOP_PLAYBACK_LENGTH_MIN_MS + (parsed / 100) * range);
+  }
+  return Math.round(clampNumber(parsed, CHOP_PLAYBACK_LENGTH_MIN_MS, CHOP_PLAYBACK_LENGTH_MAX_MS, fallback));
 }
 
 function clampIntegerText(value, fallback = 0) {
@@ -1146,8 +1163,9 @@ class PlaybackLayer {
   }
 
   triggerChop(track, when = this.audioContext.currentTime, noteDuration = 0.1, pitchOverride = null) {
-    const voice = this.state.voices[track.voiceIndex] ?? getTrackVoice(track);
-    const sampleLayer = getVoiceSampleLayer(track.voiceIndex);
+    const voiceIndex = Math.max(0, Math.min(TRACK_COUNT - 1, track.voiceIndex ?? 0));
+    const voice = this.state.voices[voiceIndex] ?? getTrackVoice(track);
+    const sampleLayer = getVoiceSampleLayer(voiceIndex);
     const pitchMidi = pitchOverride?.pitchMidi ?? PITCH_LANE_REFERENCE_MIDI;
     const window = getChopPlaybackWindow(voice, sampleLayer, pitchMidi);
     if (!window) return false;
@@ -1172,7 +1190,11 @@ class PlaybackLayer {
       envelope: track.envelope,
       sampleLayer,
     });
-    if (handle) setTrackIndicator(track.id - 1, window.startTime, window.endTime, loop ? 260 : 220);
+    if (handle) {
+      this.state.chopPlayheadPositions[voiceIndex] = window.playhead;
+      setTrackIndicator(track.id - 1, window.startTime, window.endTime, loop ? 260 : 220);
+      if (voiceIndex === this.state.selectedVoiceIndex) drawChopWaveforms();
+    }
     return handle;
   }
 
@@ -1603,7 +1625,8 @@ function createVoiceConfig(id) {
     chopGate: 70,
     chopPlayheadBehavior: "fixed",
     chopPlayheadPosition: 0,
-    chopPlaybackLength: 25,
+    chopPlaybackLength: CHOP_PLAYBACK_LENGTH_DEFAULT_MS,
+    chopPlaybackLengthUnit: CHOP_PLAYBACK_LENGTH_UNIT,
     chopUseNotePitch: false,
     chopPlaybackMode: "one-shot",
     sliceCount: 8,
@@ -1639,6 +1662,7 @@ const state = {
   voices: Array.from({ length: TRACK_COUNT }, (_, index) => createVoiceConfig(index + 1)),
   trackPlaybackState: Array.from({ length: TRACK_COUNT }, (_, index) => createTrackPlaybackState(createTrack(index + 1))),
   trackIndicators: Array.from({ length: TRACK_COUNT }, () => null),
+  chopPlayheadPositions: Array.from({ length: TRACK_COUNT }, () => null),
   synthScopeAnimationFrameId: null,
   sampleBrowserOpen: false,
   overviewDrag: {
@@ -1766,6 +1790,7 @@ function getVoiceSampleLayer(voiceIndex = state.selectedVoiceIndex) {
 
 function resetVoiceSampleLayers() {
   state.voiceSampleLayers = Array.from({ length: TRACK_COUNT }, () => new SampleLayer());
+  state.chopPlayheadPositions = Array.from({ length: TRACK_COUNT }, () => null);
   syncActiveSampleLayer();
 }
 
@@ -1793,6 +1818,7 @@ function updateVoiceSampleRegion(voiceIndex, start, end) {
   layer.setRegion(start, end);
   voice.sampleRegionStart = layer.regionStart;
   voice.sampleRegionEnd = layer.regionEnd;
+  state.chopPlayheadPositions[voiceIndex] = null;
 }
 
 function getVoiceSampleName(voice = getSelectedVoice()) {
@@ -2153,6 +2179,7 @@ function serializeVoice(voice) {
     chopPlayheadBehavior: voice.chopPlayheadBehavior,
     chopPlayheadPosition: voice.chopPlayheadPosition,
     chopPlaybackLength: voice.chopPlaybackLength,
+    chopPlaybackLengthUnit: voice.chopPlaybackLengthUnit,
     chopUseNotePitch: voice.chopUseNotePitch,
     chopPlaybackMode: voice.chopPlaybackMode,
     sliceCount: voice.sliceCount,
@@ -2190,7 +2217,8 @@ function normalizeVoice(index, source = {}) {
     chopGate: clampNumber(source.chopGate, 10, 100, fallback.chopGate),
     chopPlayheadBehavior: CHOP_PLAYHEAD_BEHAVIORS.includes(source.chopPlayheadBehavior) ? source.chopPlayheadBehavior : fallback.chopPlayheadBehavior,
     chopPlayheadPosition: clampNumber(source.chopPlayheadPosition, 0, 100, fallback.chopPlayheadPosition),
-    chopPlaybackLength: clampNumber(source.chopPlaybackLength, 1, 100, fallback.chopPlaybackLength),
+    chopPlaybackLength: normalizeChopPlaybackLength(source.chopPlaybackLength, fallback.chopPlaybackLength, source.chopPlaybackLengthUnit),
+    chopPlaybackLengthUnit: CHOP_PLAYBACK_LENGTH_UNIT,
     chopUseNotePitch: Boolean(source.chopUseNotePitch),
     chopPlaybackMode: CHOP_PLAYBACK_MODES.includes(source.chopPlaybackMode) ? source.chopPlaybackMode : fallback.chopPlaybackMode,
     sliceCount: clampNumber(source.sliceCount, 2, 16, fallback.sliceCount),
@@ -3188,6 +3216,7 @@ function getTrackPlaybackSettings(track) {
     chopPlayheadBehavior: voice.chopPlayheadBehavior,
     chopPlayheadPosition: voice.chopPlayheadPosition,
     chopPlaybackLength: voice.chopPlaybackLength,
+    chopPlaybackLengthUnit: voice.chopPlaybackLengthUnit,
     chopUseNotePitch: voice.chopUseNotePitch,
     chopPlaybackMode: voice.chopPlaybackMode,
     sliceCount: voice.sliceCount,
@@ -4347,9 +4376,6 @@ function indicateTrackPlayback(track, sliceIndex = null) {
   if (!sampleLayer.buffer) return;
 
   if (playbackTrack.mode === "chop") {
-    const pitchMidi = state.trackPlaybackState[trackIndex]?.lastTriggeredPitchMidi ?? getTrackPitchMidi(track);
-    const window = getChopPlaybackWindow(getTrackVoice(track), sampleLayer, pitchMidi);
-    if (window) setTrackIndicator(trackIndex, window.startTime, window.endTime, 220);
     return;
   }
 
@@ -4619,7 +4645,11 @@ function getChopPlaybackWindow(voice = getSelectedVoice(), layer = getSelectedVo
   if (!layer?.buffer || !voice) return null;
   const { startTime, endTime, duration: regionDuration } = getVoiceSampleRegionBounds(voice, layer);
   if (regionDuration <= 0) return null;
-  const requestedLength = regionDuration * (clampNumber(voice.chopPlaybackLength, 1, 100, 25) / 100);
+  const requestedLength = normalizeChopPlaybackLength(
+    voice.chopPlaybackLength,
+    CHOP_PLAYBACK_LENGTH_DEFAULT_MS,
+    voice.chopPlaybackLengthUnit,
+  ) / 1000;
   const minimumLength = Math.min(regionDuration, 0.03);
   const playbackLength = Math.max(minimumLength, Math.min(regionDuration, requestedLength));
   const playhead = Math.max(startTime, Math.min(endTime, getChopPlayheadTime(voice, layer, pitchMidi)));
@@ -4644,6 +4674,17 @@ function getChopPlaybackWindow(voice = getSelectedVoice(), layer = getSelectedVo
     duration,
     playhead,
   };
+}
+
+function getChopDisplayPlayheadTime(voice = getSelectedVoice(), layer = getSelectedVoiceSampleLayer(), voiceIndex = state.selectedVoiceIndex) {
+  if (!layer?.buffer || !voice) return null;
+  const { startTime, endTime } = getVoiceSampleRegionBounds(voice, layer);
+  const triggeredPlayhead = state.chopPlayheadPositions?.[voiceIndex];
+  if (Number.isFinite(triggeredPlayhead)) {
+    return Math.max(startTime, Math.min(endTime, triggeredPlayhead));
+  }
+  if (voice.chopPlayheadBehavior === "random") return null;
+  return getChopPlayheadTime(voice, layer, PITCH_LANE_REFERENCE_MIDI);
 }
 
 function drawWaveformIntoCanvas({
@@ -4750,7 +4791,7 @@ function drawChopWaveforms() {
   }
   syncVoiceSampleRegion(state.selectedVoiceIndex);
   const { startTime, endTime } = getVoiceSampleRegionBounds(voice, layer);
-  const playheadTime = getChopPlayheadTime(voice, layer, PITCH_LANE_REFERENCE_MIDI);
+  const playheadTime = getChopDisplayPlayheadTime(voice, layer, state.selectedVoiceIndex);
   drawWaveformIntoCanvas({
     canvas: ui.chopWaveform,
     layer,
@@ -4765,7 +4806,6 @@ function drawChopWaveforms() {
     viewportEndTime: layer?.buffer?.duration ?? 1,
     regionStartTime: startTime,
     regionEndTime: endTime,
-    playheadTime,
   });
 }
 
@@ -5500,7 +5540,7 @@ function syncUi() {
   ui.chopPlayheadPosition?.toggleAttribute("disabled", voice.chopPlayheadBehavior !== "fixed");
   ui.chopPlayheadPositionField?.classList.toggle("is-disabled", voice.chopPlayheadBehavior !== "fixed");
   if (ui.chopPlaybackLength) ui.chopPlaybackLength.value = String(voice.chopPlaybackLength);
-  if (ui.chopPlaybackLengthValue) ui.chopPlaybackLengthValue.textContent = `${Math.round(voice.chopPlaybackLength)}%`;
+  if (ui.chopPlaybackLengthValue) ui.chopPlaybackLengthValue.textContent = `${Math.round(voice.chopPlaybackLength)}ms`;
   ui.chopReverseToggle?.classList.toggle("active", voice.reverse);
   ui.chopReverseToggle?.setAttribute("aria-pressed", String(voice.reverse));
   ui.chopReverseToggle?.setAttribute("aria-label", `Reverse playback ${voice.reverse ? "on" : "off"}`);
@@ -5625,6 +5665,14 @@ function updateSelectedVoice(patch) {
     "chopPlaybackMode",
   ];
   const shouldResetPlayback = resetKeys.some((key) => key in patch);
+  if (
+    "mode" in patch
+    || "sampleId" in patch
+    || "chopPlayheadBehavior" in patch
+    || "chopPlayheadPosition" in patch
+  ) {
+    state.chopPlayheadPositions[state.selectedVoiceIndex] = null;
+  }
   state.tracks.forEach((track, index) => {
     if (track.voiceIndex !== state.selectedVoiceIndex) return;
     state.playback?.updateTrackBus(index, track);
@@ -5799,6 +5847,7 @@ function clearCurrentSessionSettings() {
   state.defaultSampleLoaded = false;
   state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track));
   state.trackIndicators = Array.from({ length: TRACK_COUNT }, () => null);
+  state.chopPlayheadPositions = Array.from({ length: TRACK_COUNT }, () => null);
   state.pitchStepSelection = { trackIndex: null, cellIndex: null };
   state.currentTransportStep = -1;
   state.mixVolume = 0.9;

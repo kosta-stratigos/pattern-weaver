@@ -756,10 +756,12 @@ h2 {
 
 .chop-settings-stack {
   gap: 12px;
+  grid-template-columns: minmax(260px, 0.85fr) minmax(360px, 1.15fr);
+  align-items: start;
 }
 
 .chop-playback-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   align-items: end;
 }
 
@@ -2010,10 +2012,6 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (max-width: 1280px) {
-  .chop-playback-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .pattern-settings-stack {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2029,6 +2027,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (max-width: 920px) {
+  .chop-settings-stack,
   .chop-playback-grid {
     grid-template-columns: 1fr;
   }
