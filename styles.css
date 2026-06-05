@@ -767,14 +767,21 @@ h2 {
 
 .chop-toggle-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px;
-  align-items: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  min-height: 48px;
   padding: 7px 9px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--pane-radius);
   background: rgba(255, 255, 255, 0.03);
+}
+
+.chop-toggle-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  min-width: 0;
 }
 
 .chop-toggle-row .composer-slot-switch {
@@ -2028,7 +2035,8 @@ input[type="range"]::-moz-range-thumb {
 
 @media (max-width: 920px) {
   .chop-settings-stack,
-  .chop-playback-grid {
+  .chop-playback-grid,
+  .chop-toggle-row {
     grid-template-columns: 1fr;
   }
 

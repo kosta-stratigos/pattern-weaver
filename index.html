@@ -325,25 +325,27 @@
                       <label class="compact-field">
                         Playback Length
                         <div class="slider-row">
-                          <input id="chop-playback-length" type="range" min="50" max="500" step="10" value="150" />
+                          <input id="chop-playback-length" type="range" min="50" max="1500" step="10" value="150" />
                           <span id="chop-playback-length-value" class="value-pill">150ms</span>
                         </div>
                       </label>
                       <div class="chop-toggle-row">
-                        <span class="composer-playback-label">Reverse</span>
-                        <button id="chop-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off">
-                          <span class="composer-slot-switch-track" aria-hidden="true">
-                            <span class="composer-slot-switch-thumb"></span>
-                          </span>
-                        </button>
-                      </div>
-                      <div class="chop-toggle-row">
-                        <span class="composer-playback-label">Use Note Pitch</span>
-                        <button id="chop-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Use note pitch off">
-                          <span class="composer-slot-switch-track" aria-hidden="true">
-                            <span class="composer-slot-switch-thumb"></span>
-                          </span>
-                        </button>
+                        <div class="chop-toggle-control">
+                          <span class="composer-playback-label">Reverse</span>
+                          <button id="chop-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off">
+                            <span class="composer-slot-switch-track" aria-hidden="true">
+                              <span class="composer-slot-switch-thumb"></span>
+                            </span>
+                          </button>
+                        </div>
+                        <div class="chop-toggle-control">
+                          <span class="composer-playback-label">Use Note Pitch</span>
+                          <button id="chop-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Use note pitch off">
+                            <span class="composer-slot-switch-track" aria-hidden="true">
+                              <span class="composer-slot-switch-thumb"></span>
+                            </span>
+                          </button>
+                        </div>
                       </div>
                       <div class="voice-operation-button-group chop-playback-mode-group" role="group" aria-label="Chop playback mode">
                         <button id="chop-play-one-shot" type="button">1 Shot</button>

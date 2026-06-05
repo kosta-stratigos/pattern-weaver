@@ -222,7 +222,7 @@ const SYNTH_WAVES = ["sine", "triangle", "sawtooth", "square"];
 const CHOP_PLAYHEAD_BEHAVIORS = ["fixed", "random", "note"];
 const CHOP_PLAYBACK_MODES = ["one-shot", "loop"];
 const CHOP_PLAYBACK_LENGTH_MIN_MS = 50;
-const CHOP_PLAYBACK_LENGTH_MAX_MS = 500;
+const CHOP_PLAYBACK_LENGTH_MAX_MS = 1500;
 const CHOP_PLAYBACK_LENGTH_DEFAULT_MS = 150;
 const CHOP_PLAYBACK_LENGTH_UNIT = "ms";
 const SCALE_OPTIONS = [
@@ -4728,6 +4728,8 @@ function drawWaveformIntoCanvas({
   regionStartTime = null,
   regionEndTime = null,
   playheadTime = null,
+  playheadLength = null,
+  playheadReverse = false,
   emptyMessage = "Load a sample to edit its window.",
 }) {
   if (!(canvas instanceof HTMLCanvasElement)) return;
@@ -4804,6 +4806,17 @@ function drawWaveformIntoCanvas({
 
   if (Number.isFinite(playheadTime)) {
     const playheadX = Math.max(0, Math.min(width, toX(playheadTime)));
+    if (Number.isFinite(playheadLength) && playheadLength > 0) {
+      const playbackEndTime = playheadReverse ? playheadTime - playheadLength : playheadTime + playheadLength;
+      const playbackEndX = Math.max(0, Math.min(width, toX(playbackEndTime)));
+      const playbackStartX = Math.min(playheadX, playbackEndX);
+      const playbackWidth = Math.max(2, Math.abs(playbackEndX - playheadX));
+      ctx.fillStyle = "rgba(79, 196, 184, 0.14)";
+      ctx.fillRect(playbackStartX, 0, playbackWidth, height);
+      ctx.strokeStyle = "rgba(79, 196, 184, 0.44)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(playbackStartX, 1, playbackWidth, height - 2);
+    }
     ctx.strokeStyle = "rgba(79, 196, 184, 0.95)";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -4825,12 +4838,18 @@ function drawChopWaveforms() {
   syncVoiceSampleRegion(state.selectedVoiceIndex);
   const { startTime, endTime } = getVoiceSampleRegionBounds(voice, layer);
   const playheadTime = getChopDisplayPlayheadTime(voice, layer, state.selectedVoiceIndex);
+  const playheadLength = Math.min(
+    Math.max(0, endTime - startTime),
+    normalizeChopPlaybackLength(voice.chopPlaybackLength, CHOP_PLAYBACK_LENGTH_DEFAULT_MS, voice.chopPlaybackLengthUnit) / 1000,
+  );
   drawWaveformIntoCanvas({
     canvas: ui.chopWaveform,
     layer,
     viewportStartTime: startTime,
     viewportEndTime: endTime,
     playheadTime,
+    playheadLength,
+    playheadReverse: voice.reverse,
   });
   drawWaveformIntoCanvas({
     canvas: ui.chopWaveformOverview,
