@@ -2090,7 +2090,24 @@ function resetTrackPlaybackState(trackIndex = null) {
   state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track, getTrackPlaybackPattern(track) ?? getTrackPattern(track)));
 }
 
-function syncTrackPlaybackStateForPatternSwitch(trackIndex) {
+function getPatternSwitchSourceIndex(playbackState, visibleCellCount) {
+  const sourceIndexes = [
+    playbackState?.lastPatternIndex,
+    playbackState?.lastTriggeredPatternIndex,
+    playbackState?.patternIndex,
+  ];
+  const sourceIndex = sourceIndexes.find((value) => Number.isInteger(value) && value >= 0);
+  if (!Number.isInteger(sourceIndex)) return 0;
+  return Math.max(0, Math.min(visibleCellCount - 1, sourceIndex));
+}
+
+function mapPatternSwitchIndex(sourceIndex, sourceCellCount, targetCellCount) {
+  if (targetCellCount <= 1 || sourceCellCount <= 1) return 0;
+  const normalizedPosition = Math.max(0, Math.min(1, sourceIndex / sourceCellCount));
+  return Math.max(0, Math.min(targetCellCount - 1, Math.floor(normalizedPosition * targetCellCount)));
+}
+
+function syncTrackPlaybackStateForPatternSwitch(trackIndex, previousPattern = null) {
   const track = state.tracks[trackIndex];
   if (!track) return;
   state.playback?.stopTrackSustainedVoice(trackIndex);
@@ -2099,11 +2116,20 @@ function syncTrackPlaybackStateForPatternSwitch(trackIndex) {
     return;
   }
   const activePattern = getTrackPattern(track);
-  const visibleCellCount = getTrackVisibleCellCount(track);
-  const playbackState = state.trackPlaybackState[trackIndex] ?? createTrackPlaybackState(track);
-  playbackState.patternIndex = Math.max(0, Math.min(visibleCellCount - 1, playbackState.patternIndex ?? 0));
-  playbackState.lastPatternIndex = Math.max(-1, Math.min(visibleCellCount - 1, playbackState.lastPatternIndex ?? -1));
-  playbackState.lastTriggeredPatternIndex = Math.max(-1, Math.min(visibleCellCount - 1, playbackState.lastTriggeredPatternIndex ?? -1));
+  const sourcePattern = previousPattern ?? activePattern;
+  const sourceCellCount = getTrackVisibleCellCount(track, sourcePattern);
+  const targetCellCount = getTrackVisibleCellCount(track, activePattern);
+  const playbackState = state.trackPlaybackState[trackIndex] ?? createTrackPlaybackState(track, sourcePattern);
+  const sourceIndex = getPatternSwitchSourceIndex(playbackState, sourceCellCount);
+  const mappedIndex = mapPatternSwitchIndex(sourceIndex, sourceCellCount, targetCellCount);
+  playbackState.patternIndex = mappedIndex;
+  playbackState.lastPatternIndex = mappedIndex;
+  playbackState.lastTriggeredPatternIndex = -1;
+  playbackState.lastTriggeredPitchMidi = null;
+  playbackState.lastScheduledSlot = -1;
+  playbackState.lastHeldPitchMidi = null;
+  playbackState.lastLoopingPitchMidi = null;
+  playbackState.nextLoopingTriggerTime = -1;
   if (activePattern.playbackMode === "reverse") {
     playbackState.patternDirection = -1;
   } else if (activePattern.playbackMode !== "ping-pong") {
@@ -5187,11 +5213,12 @@ function activateTrackPattern(trackIndex, patternIndex, { selectTrack = false, m
   if (!track) return;
   const safePatternIndex = Math.max(0, Math.min(TRACK_PATTERN_COUNT - 1, Number(patternIndex) || 0));
   if (track.activePatternIndex === safePatternIndex && !selectTrack && !markDefined) return;
+  const previousPattern = getTrackPattern(track);
   if (selectTrack) state.selectedTrackIndex = trackIndex;
   track.activePatternIndex = safePatternIndex;
   const activePattern = getTrackPattern(track);
   if (markDefined) activePattern.isDefined = true;
-  syncTrackPlaybackStateForPatternSwitch(trackIndex);
+  syncTrackPlaybackStateForPatternSwitch(trackIndex, previousPattern);
   state.playback?.updateTrackBus(trackIndex, track);
   if (state.pitchStepSelection.trackIndex === trackIndex) {
     state.pitchStepSelection = { trackIndex: null, cellIndex: null };
