@@ -1487,88 +1487,79 @@ class TransportLayer {
   }
 
   scheduleStep(stepIndex, when) {
-    const completedPatternCycles = [];
+    const baseStep = this.state.composer.enabled ? this.state.composer.currentSlotStep : stepIndex;
+    processQueuedPatternSwitchesAtStep(baseStep);
     this.state.tracks.forEach((track) => {
       const playbackPattern = getTrackPlaybackPattern(track);
       const patternForPlayback = playbackPattern ?? getTrackPattern(track);
-      const baseStep = this.state.composer.enabled ? this.state.composer.currentSlotStep : stepIndex;
       if (!playbackPattern && this.state.composer.enabled) return;
       if (!shouldAdvanceTrackStep(track, baseStep, patternForPlayback)) return;
-      const scheduleSlot = getTrackScheduleSlot(track, baseStep, patternForPlayback);
-      const completesPatternCycle = scheduleSlot >= getTrackVisibleCellCount(track, patternForPlayback) - 1;
-      try {
-        const cellIndex = resolveTrackPatternStep(track, { advance: true, pattern: patternForPlayback });
-        const playbackState = this.state.trackPlaybackState[track.id - 1];
-        const envelopeType = getEnvelopeType(patternForPlayback.envelope);
-        if (playbackState) {
-          playbackState.lastTriggeredPatternIndex = -1;
-          playbackState.lastTriggeredPitchMidi = null;
-        }
-        const stepActive = Boolean(patternForPlayback.pattern[cellIndex]);
-        if (stepActive && Math.random() * 100 > patternForPlayback.stepProbability) return;
-        if (!isTrackAudible(track)) return;
-        const sliceIndex = resolvePlaybackSliceIndex(track, { advance: true });
-        const noteDuration = getTrackTriggerDuration(track, patternForPlayback);
-        const randomEveryNotes = patternForPlayback.pitchFill.type === "random-every" ? getTrackPitchFillNotes(track, patternForPlayback) : null;
-        const pitchMidi = randomEveryNotes
-          ? randomEveryNotes[Math.floor(Math.random() * randomEveryNotes.length)]
-          : getTrackStepPitchMidi(track, cellIndex, patternForPlayback);
-        const pitchSemitones = pitchMidi - PITCH_LANE_REFERENCE_MIDI;
+      const cellIndex = resolveTrackPatternStep(track, { advance: true, pattern: patternForPlayback });
+      const playbackState = this.state.trackPlaybackState[track.id - 1];
+      const envelopeType = getEnvelopeType(patternForPlayback.envelope);
+      if (playbackState) {
+        playbackState.lastTriggeredPatternIndex = -1;
+        playbackState.lastTriggeredPitchMidi = null;
+      }
+      const stepActive = Boolean(patternForPlayback.pattern[cellIndex]);
+      if (stepActive && Math.random() * 100 > patternForPlayback.stepProbability) return;
+      if (!isTrackAudible(track)) return;
+      const sliceIndex = resolvePlaybackSliceIndex(track, { advance: true });
+      const noteDuration = getTrackTriggerDuration(track, patternForPlayback);
+      const randomEveryNotes = patternForPlayback.pitchFill.type === "random-every" ? getTrackPitchFillNotes(track, patternForPlayback) : null;
+      const pitchMidi = randomEveryNotes
+        ? randomEveryNotes[Math.floor(Math.random() * randomEveryNotes.length)]
+        : getTrackStepPitchMidi(track, cellIndex, patternForPlayback);
+      const pitchSemitones = pitchMidi - PITCH_LANE_REFERENCE_MIDI;
 
-        if (envelopeType === "hold") {
-          if (!stepActive) return;
-          if (playbackState && Number.isFinite(playbackState.lastHeldPitchMidi) && playbackState.lastHeldPitchMidi === pitchMidi) {
-            playbackState.lastTriggeredPatternIndex = cellIndex;
-            playbackState.lastTriggeredPitchMidi = pitchMidi;
-            return;
-          }
-          this.playbackLayer.stopTrackSustainedVoice(track.id - 1);
-          const handle = this.playbackLayer.triggerHeldTrack(track, when, sliceIndex, { pitchMidi, pitchSemitones });
-          this.playbackLayer.trackSustainedVoices[track.id - 1] = handle;
-          if (playbackState) {
-            playbackState.lastHeldPitchMidi = pitchMidi;
-            playbackState.lastTriggeredPatternIndex = cellIndex;
-            playbackState.lastTriggeredPitchMidi = pitchMidi;
-          }
-          indicateTrackPlayback(track, sliceIndex);
-          return;
-        }
-
-        if (envelopeType === "looping") {
-          if (stepActive && playbackState) playbackState.lastLoopingPitchMidi = pitchMidi;
-          const loopPitchMidi = playbackState?.lastLoopingPitchMidi ?? pitchMidi ?? getTrackPitchMidi(track);
-          const loopingPitchSemitones = loopPitchMidi - PITCH_LANE_REFERENCE_MIDI;
-          const nextTriggerTime = playbackState?.nextLoopingTriggerTime ?? -1;
-          if (when + 0.0001 < nextTriggerTime) return;
-          const loopHandle = this.playbackLayer.triggerTrack(track, when, sliceIndex, noteDuration, {
-            pitchMidi: loopPitchMidi,
-            pitchSemitones: loopingPitchSemitones,
-          });
-          const envelopeTiming = getTrackEnvelopeTiming(when, noteDuration, patternForPlayback.envelope);
-          if (playbackState) {
-            playbackState.nextLoopingTriggerTime = envelopeTiming.stopTime;
-            playbackState.lastTriggeredPatternIndex = cellIndex;
-            playbackState.lastTriggeredPitchMidi = loopPitchMidi;
-          }
-          indicateTrackPlayback(track, sliceIndex);
-          return loopHandle;
-        }
-
+      if (envelopeType === "hold") {
         if (!stepActive) return;
-        if (playbackState) {
+        if (playbackState && Number.isFinite(playbackState.lastHeldPitchMidi) && playbackState.lastHeldPitchMidi === pitchMidi) {
           playbackState.lastTriggeredPatternIndex = cellIndex;
           playbackState.lastTriggeredPitchMidi = pitchMidi;
-          playbackState.lastHeldPitchMidi = null;
+          return;
+        }
+        this.playbackLayer.stopTrackSustainedVoice(track.id - 1);
+        const handle = this.playbackLayer.triggerHeldTrack(track, when, sliceIndex, { pitchMidi, pitchSemitones });
+        this.playbackLayer.trackSustainedVoices[track.id - 1] = handle;
+        if (playbackState) {
+          playbackState.lastHeldPitchMidi = pitchMidi;
+          playbackState.lastTriggeredPatternIndex = cellIndex;
+          playbackState.lastTriggeredPitchMidi = pitchMidi;
         }
         indicateTrackPlayback(track, sliceIndex);
-        this.playbackLayer.triggerTrack(track, when, sliceIndex, noteDuration, { pitchMidi, pitchSemitones });
-      } finally {
-        if (completesPatternCycle) {
-          completedPatternCycles.push({ trackIndex: track.id - 1, pattern: patternForPlayback });
-        }
+        return;
       }
+
+      if (envelopeType === "looping") {
+        if (stepActive && playbackState) playbackState.lastLoopingPitchMidi = pitchMidi;
+        const loopPitchMidi = playbackState?.lastLoopingPitchMidi ?? pitchMidi ?? getTrackPitchMidi(track);
+        const loopingPitchSemitones = loopPitchMidi - PITCH_LANE_REFERENCE_MIDI;
+        const nextTriggerTime = playbackState?.nextLoopingTriggerTime ?? -1;
+        if (when + 0.0001 < nextTriggerTime) return;
+        const loopHandle = this.playbackLayer.triggerTrack(track, when, sliceIndex, noteDuration, {
+          pitchMidi: loopPitchMidi,
+          pitchSemitones: loopingPitchSemitones,
+        });
+        const envelopeTiming = getTrackEnvelopeTiming(when, noteDuration, patternForPlayback.envelope);
+        if (playbackState) {
+          playbackState.nextLoopingTriggerTime = envelopeTiming.stopTime;
+          playbackState.lastTriggeredPatternIndex = cellIndex;
+          playbackState.lastTriggeredPitchMidi = loopPitchMidi;
+        }
+        indicateTrackPlayback(track, sliceIndex);
+        return loopHandle;
+      }
+
+      if (!stepActive) return;
+      if (playbackState) {
+        playbackState.lastTriggeredPatternIndex = cellIndex;
+        playbackState.lastTriggeredPitchMidi = pitchMidi;
+        playbackState.lastHeldPitchMidi = null;
+      }
+      indicateTrackPlayback(track, sliceIndex);
+      this.playbackLayer.triggerTrack(track, when, sliceIndex, noteDuration, { pitchMidi, pitchSemitones });
     });
-    processPatternCycleCompletions(completedPatternCycles);
     if (this.onStep) this.onStep(stepIndex);
   }
 
@@ -3543,12 +3534,22 @@ function getTrackTriggerDuration(track, pattern = getTrackPattern(track)) {
   return (60 / state.bpm) * 4 / stepsPerBar;
 }
 
+function getTrackPatternBaseSteps(track, pattern = getTrackPattern(track)) {
+  return BASE_GRID_STEPS_PER_BAR * getTrackBarCount(track, pattern);
+}
+
 function getTrackScheduleSlot(track, baseStep, pattern = getTrackPattern(track)) {
   const activePattern = pattern ?? getTrackPattern(track);
   const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
-  const patternBaseSteps = BASE_GRID_STEPS_PER_BAR * getTrackBarCount(track, activePattern);
+  const patternBaseSteps = getTrackPatternBaseSteps(track, activePattern);
   const loopStep = ((baseStep % patternBaseSteps) + patternBaseSteps) % patternBaseSteps;
   return Math.floor((loopStep * visibleCellCount) / patternBaseSteps);
+}
+
+function isTrackPatternCycleStart(track, baseStep, pattern = getTrackPattern(track)) {
+  const patternBaseSteps = getTrackPatternBaseSteps(track, pattern);
+  const loopStep = ((baseStep % patternBaseSteps) + patternBaseSteps) % patternBaseSteps;
+  return loopStep === 0;
 }
 
 function shouldAdvanceTrackStep(track, baseStep, pattern = getTrackPattern(track)) {
@@ -5372,29 +5373,29 @@ function applyQueuedPatternSwitches(trackIndexes) {
   });
 }
 
-function hasActiveNonRandomPattern() {
-  return state.tracks.some((track) => getTrackPattern(track).playbackMode !== "random");
-}
-
-function processPatternCycleCompletions(completions = []) {
-  if (state.patternSwitcher.switchMode !== "on-one" || !completions.length) return;
-  const completedNonRandomTracks = completions
-    .filter((completion) => completion.pattern?.playbackMode !== "random")
-    .map((completion) => completion.trackIndex);
+function processQueuedPatternSwitchesAtStep(baseStep) {
+  if (state.patternSwitcher.switchMode !== "on-one") return;
+  const activeNonRandomTracks = state.tracks
+    .map((track) => ({ track, pattern: getTrackPattern(track) }))
+    .filter(({ pattern }) => pattern.playbackMode !== "random");
+  const nonRandomBoundaryReached = activeNonRandomTracks.some(({ track, pattern }) =>
+    isTrackPatternCycleStart(track, baseStep, pattern),
+  );
+  const hasNonRandomTrack = activeNonRandomTracks.length > 0;
   const switchTrackIndexes = new Set();
-  completedNonRandomTracks.forEach((trackIndex) => {
-    if (state.patternSwitcher.pendingSwitches[trackIndex]) switchTrackIndexes.add(trackIndex);
+
+  state.tracks.forEach((track, trackIndex) => {
+    if (!state.patternSwitcher.pendingSwitches[trackIndex]) return;
+    const activePattern = getTrackPattern(track);
+    if (activePattern.playbackMode === "random") {
+      if (nonRandomBoundaryReached || (!hasNonRandomTrack && isTrackPatternCycleStart(track, baseStep, activePattern))) {
+        switchTrackIndexes.add(trackIndex);
+      }
+      return;
+    }
+    if (isTrackPatternCycleStart(track, baseStep, activePattern)) switchTrackIndexes.add(trackIndex);
   });
-  if (completedNonRandomTracks.length) {
-    state.tracks.forEach((track, trackIndex) => {
-      if (!state.patternSwitcher.pendingSwitches[trackIndex]) return;
-      if (getTrackPattern(track).playbackMode === "random") switchTrackIndexes.add(trackIndex);
-    });
-  } else if (!hasActiveNonRandomPattern()) {
-    completions.forEach(({ trackIndex }) => {
-      if (state.patternSwitcher.pendingSwitches[trackIndex]) switchTrackIndexes.add(trackIndex);
-    });
-  }
+
   applyQueuedPatternSwitches([...switchTrackIndexes]);
 }
 

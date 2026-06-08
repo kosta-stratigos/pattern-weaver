@@ -1243,7 +1243,9 @@ input[type="range"]::-moz-range-thumb {
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding-top: 10px;
+  padding-bottom: 4px;
 }
 
 .pattern-switcher-sync-group {
