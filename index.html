@@ -568,6 +568,15 @@
 
             <section class="workspace-panel workspace-panel-pattern-switcher" data-workspace-panel="pattern-switcher">
               <div id="sequence-pattern-switcher" class="effects-matrix pattern-switcher-matrix"></div>
+              <div class="pattern-switcher-actions" aria-label="Pattern switcher controls">
+                <div class="voice-operation-button-group pattern-switcher-sync-group" role="group" aria-label="Pattern sync">
+                  <button id="pattern-switcher-sync" type="button">Sync</button>
+                </div>
+                <div class="voice-operation-button-group pattern-switcher-mode-group" role="group" aria-label="Pattern switch mode">
+                  <button id="pattern-switch-instant" type="button" aria-pressed="true">Switch Instantly</button>
+                  <button id="pattern-switch-on-one" type="button" aria-pressed="false">Switch on the 1</button>
+                </div>
+              </div>
             </section>
 
             <section class="workspace-panel workspace-panel-composer" data-workspace-panel="composer">
