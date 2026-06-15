@@ -181,6 +181,11 @@ const ui = {
   mixVolumeValue: document.querySelector("#mix-volume-value"),
   mixerGrid: document.querySelector("#mixer-grid"),
   patternGrid: document.querySelector("#pattern-grid"),
+  sequencerCopyTrack: document.querySelector("#sequencer-copy-track"),
+  sequencerPasteTrack: document.querySelector("#sequencer-paste-track"),
+  sequencerShiftLeft: document.querySelector("#sequencer-shift-left"),
+  sequencerShiftRight: document.querySelector("#sequencer-shift-right"),
+  sequencerDeselectAll: document.querySelector("#sequencer-deselect-all"),
   sequencePatternSwitcher: document.querySelector("#sequence-pattern-switcher"),
   patternSwitcherSync: document.querySelector("#pattern-switcher-sync"),
   patternSwitchInstant: document.querySelector("#pattern-switch-instant"),
@@ -1739,10 +1744,8 @@ const state = {
   sessionClearOverlay: {
     open: false,
   },
-  pitchStepSelection: {
-    trackIndex: null,
-    cellIndex: null,
-  },
+  selectedStepKeys: new Set(),
+  copiedTrackPattern: null,
   currentTransportStep: -1,
   currentSampleName: "",
   mixVolume: 0.9,
@@ -1751,6 +1754,225 @@ const state = {
 };
 
 const sampleCache = new Map();
+
+function getStepSelectionKey(trackIndex, cellIndex) {
+  return `${trackIndex}:${cellIndex}`;
+}
+
+function parseStepSelectionKey(key) {
+  const [trackIndexRaw, cellIndexRaw] = String(key).split(":");
+  const trackIndex = Number(trackIndexRaw);
+  const cellIndex = Number(cellIndexRaw);
+  if (!Number.isInteger(trackIndex) || !Number.isInteger(cellIndex)) return null;
+  return { trackIndex, cellIndex };
+}
+
+function getStepOrderIndex(trackIndex, cellIndex) {
+  return trackIndex * MAX_PATTERN_CELLS + cellIndex;
+}
+
+function isSelectableStep(trackIndex, cellIndex) {
+  const track = state.tracks[trackIndex];
+  if (!track || !Number.isInteger(cellIndex) || cellIndex < 0) return false;
+  const pattern = getTrackPlaybackPattern(track) ?? getTrackPattern(track);
+  return cellIndex < getTrackVisibleCellCount(track, pattern);
+}
+
+function isStepSelected(trackIndex, cellIndex) {
+  return state.selectedStepKeys.has(getStepSelectionKey(trackIndex, cellIndex));
+}
+
+function setStepSelected(trackIndex, cellIndex, selected = true) {
+  if (!isSelectableStep(trackIndex, cellIndex)) return;
+  const key = getStepSelectionKey(trackIndex, cellIndex);
+  if (selected) {
+    state.selectedStepKeys.add(key);
+  } else {
+    state.selectedStepKeys.delete(key);
+  }
+}
+
+function toggleStepSelection(trackIndex, cellIndex) {
+  setStepSelected(trackIndex, cellIndex, !isStepSelected(trackIndex, cellIndex));
+}
+
+function clearTrackStepSelection(trackIndex) {
+  Array.from(state.selectedStepKeys).forEach((key) => {
+    const selectedStep = parseStepSelectionKey(key);
+    if (selectedStep?.trackIndex === trackIndex) state.selectedStepKeys.delete(key);
+  });
+}
+
+function pruneSelectedSteps() {
+  Array.from(state.selectedStepKeys).forEach((key) => {
+    const selectedStep = parseStepSelectionKey(key);
+    if (!selectedStep || !isSelectableStep(selectedStep.trackIndex, selectedStep.cellIndex)) {
+      state.selectedStepKeys.delete(key);
+    }
+  });
+}
+
+function selectStepOrderRange(startOrder, endOrder) {
+  const rangeStart = Math.min(startOrder, endOrder);
+  const rangeEnd = Math.max(startOrder, endOrder);
+  state.tracks.forEach((track, trackIndex) => {
+    const pattern = getTrackPlaybackPattern(track) ?? getTrackPattern(track);
+    const visibleCellCount = getTrackVisibleCellCount(track, pattern);
+    for (let cellIndex = 0; cellIndex < visibleCellCount; cellIndex += 1) {
+      const order = getStepOrderIndex(trackIndex, cellIndex);
+      if (order >= rangeStart && order <= rangeEnd) {
+        setStepSelected(trackIndex, cellIndex);
+      }
+    }
+  });
+}
+
+function selectStepRangeBackward(trackIndex, cellIndex) {
+  if (!isSelectableStep(trackIndex, cellIndex)) return;
+  pruneSelectedSteps();
+  const targetOrder = getStepOrderIndex(trackIndex, cellIndex);
+  let anchorOrder = null;
+
+  state.selectedStepKeys.forEach((key) => {
+    const selectedStep = parseStepSelectionKey(key);
+    if (!selectedStep || !isSelectableStep(selectedStep.trackIndex, selectedStep.cellIndex)) return;
+    const selectedOrder = getStepOrderIndex(selectedStep.trackIndex, selectedStep.cellIndex);
+    if (selectedOrder < targetOrder && (anchorOrder == null || selectedOrder > anchorOrder)) {
+      anchorOrder = selectedOrder;
+    }
+  });
+
+  if (anchorOrder == null) {
+    setStepSelected(trackIndex, cellIndex);
+    return;
+  }
+  selectStepOrderRange(anchorOrder, targetOrder);
+}
+
+function createTrackPatternClipboard(track, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
+  return {
+    stepCount: Math.max(1, Math.min(STEPS_PER_BAR_MAX, Number(activePattern.stepCount) || 16)),
+    barCount: Math.max(1, Math.min(MAX_PATTERN_BARS, Number(activePattern.barCount) || DEFAULT_PATTERN_BAR_COUNT)),
+    pattern: Array.from({ length: MAX_PATTERN_CELLS }, (_, index) => Boolean(activePattern.pattern?.[index])),
+    stepPitches: Array.from({ length: MAX_PATTERN_CELLS }, (_, index) => {
+      const pitch = activePattern.stepPitches?.[index];
+      return pitch == null ? null : clampMidiNote(pitch, PITCH_LANE_REFERENCE_MIDI);
+    }),
+    sourceTrackName: track?.name ?? "Track",
+  };
+}
+
+function syncSequencerActions() {
+  const track = getSelectedTrack();
+  const activePattern = getTrackPattern(track);
+  const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
+  const canShift = visibleCellCount > 1;
+
+  if (ui.sequencerPasteTrack instanceof HTMLButtonElement) {
+    ui.sequencerPasteTrack.disabled = !state.copiedTrackPattern;
+  }
+  if (ui.sequencerShiftLeft instanceof HTMLButtonElement) {
+    ui.sequencerShiftLeft.disabled = !canShift;
+  }
+  if (ui.sequencerShiftRight instanceof HTMLButtonElement) {
+    ui.sequencerShiftRight.disabled = !canShift;
+  }
+  if (ui.sequencerDeselectAll instanceof HTMLButtonElement) {
+    ui.sequencerDeselectAll.disabled = state.selectedStepKeys.size === 0;
+  }
+}
+
+function refreshAfterSequencerTrackOperation(trackIndex = state.selectedTrackIndex, { persist = true, resetPlayback = true } = {}) {
+  const track = state.tracks[trackIndex];
+  if (!track) return;
+  if (resetPlayback) resetTrackPlaybackState(trackIndex);
+  state.chopPlayheadPositions[track.voiceIndex] = null;
+  state.playback?.updateTrackBus(trackIndex, track);
+  pruneSelectedSteps();
+  syncUi();
+  renderTrackSelector();
+  renderEffectsMatrix();
+  renderSequencePatternSwitcher();
+  renderMixer();
+  renderPattern();
+  renderPitchLanes();
+  drawWaveform();
+  syncSequencerActions();
+  if (persist) writeStoredSession();
+}
+
+function copySelectedTrackPattern() {
+  const track = getSelectedTrack();
+  if (!track) return;
+  state.copiedTrackPattern = createTrackPatternClipboard(track, getTrackPattern(track));
+  syncSequencerActions();
+  setDiagnostics(`${formatTrackName(track, state.selectedTrackIndex)} copied.`, "ok");
+}
+
+function pasteCopiedTrackPattern() {
+  const copiedPattern = state.copiedTrackPattern;
+  if (!copiedPattern) {
+    setDiagnostics("copy a track before pasting.", "warn");
+    syncSequencerActions();
+    return;
+  }
+
+  const track = getSelectedTrack();
+  const activePattern = getTrackPattern(track);
+  activePattern.isDefined = true;
+  activePattern.stepCount = Math.max(1, Math.min(STEPS_PER_BAR_MAX, Number(copiedPattern.stepCount) || activePattern.stepCount));
+  activePattern.barCount = Math.max(1, Math.min(MAX_PATTERN_BARS, Number(copiedPattern.barCount) || activePattern.barCount));
+  activePattern.pattern = Array.from({ length: MAX_PATTERN_CELLS }, (_, index) => Boolean(copiedPattern.pattern?.[index]));
+  activePattern.stepPitches = Array.from({ length: MAX_PATTERN_CELLS }, (_, index) => {
+    const pitch = copiedPattern.stepPitches?.[index];
+    return pitch == null ? null : clampMidiNote(pitch, PITCH_LANE_REFERENCE_MIDI);
+  });
+
+  refreshAfterSequencerTrackOperation(state.selectedTrackIndex);
+  setDiagnostics(`${copiedPattern.sourceTrackName} pasted into ${formatTrackName(track, state.selectedTrackIndex)}.`, "ok");
+}
+
+function rotateSelectedTrackPattern(direction) {
+  const track = getSelectedTrack();
+  const activePattern = getTrackPattern(track);
+  const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
+  if (visibleCellCount <= 1) {
+    setDiagnostics("track needs at least two steps to shift.", "warn");
+    syncSequencerActions();
+    return;
+  }
+
+  const stepStates = activePattern.pattern.slice(0, visibleCellCount);
+  const pitchStates = activePattern.stepPitches.slice(0, visibleCellCount);
+
+  if (direction < 0) {
+    stepStates.push(stepStates.shift());
+    pitchStates.push(pitchStates.shift());
+  } else {
+    stepStates.unshift(stepStates.pop());
+    pitchStates.unshift(pitchStates.pop());
+  }
+
+  for (let cellIndex = 0; cellIndex < visibleCellCount; cellIndex += 1) {
+    activePattern.pattern[cellIndex] = Boolean(stepStates[cellIndex]);
+    activePattern.stepPitches[cellIndex] = pitchStates[cellIndex] ?? null;
+  }
+
+  refreshAfterSequencerTrackOperation(state.selectedTrackIndex, { resetPlayback: false });
+  setDiagnostics(`${formatTrackName(track, state.selectedTrackIndex)} shifted ${direction < 0 ? "left" : "right"}.`, "ok");
+}
+
+function deselectAllSteps() {
+  if (!state.selectedStepKeys.size) {
+    syncSequencerActions();
+    return;
+  }
+  state.selectedStepKeys.clear();
+  renderPattern(state.currentTransportStep);
+  syncSequencerActions();
+  setDiagnostics("selected steps cleared.", "ok");
+}
 
 function getSelectedTrack() {
   return state.tracks[state.selectedTrackIndex];
@@ -2505,6 +2727,7 @@ function applyStoredSession(snapshot = readStoredSession()) {
     });
   }
   state.defaultSampleLoaded = false;
+  state.selectedStepKeys.clear();
   syncAllTrackBuses();
   resetTrackPlaybackState();
   if (state.playback) state.playback.output.gain.value = state.mixVolume;
@@ -2791,13 +3014,6 @@ function getTrackStepPitchMidi(track, cellIndex = null, pattern = getTrackPatter
   if (!Number.isInteger(cellIndex) || cellIndex < 0) return getTrackPitchMidi(track);
   const stepPitch = activePattern.stepPitches?.[cellIndex];
   return stepPitch == null ? getTrackPitchMidi(track) : clampMidiNote(stepPitch, getTrackPitchMidi(track));
-}
-
-function getAssignedTrackStepPitchMidi(track, cellIndex = null, pattern = getTrackPattern(track)) {
-  const activePattern = pattern ?? getTrackPattern(track);
-  if (!Number.isInteger(cellIndex) || cellIndex < 0) return null;
-  const stepPitch = activePattern.stepPitches?.[cellIndex];
-  return stepPitch == null ? null : clampMidiNote(stepPitch, PITCH_LANE_REFERENCE_MIDI);
 }
 
 function getScaleNotesInRange(track, fromMidi, toMidi) {
@@ -3397,7 +3613,6 @@ function renderPitchLanes() {
         Math.min(PITCH_LANE_START_MIDI + PITCH_LANE_NOTE_COUNT - 1, highlightMidi),
       )
       : null;
-    const selectedPitchCell = state.pitchStepSelection.trackIndex === index ? state.pitchStepSelection.cellIndex : null;
     for (let noteIndex = 0; noteIndex < PITCH_LANE_NOTE_COUNT; noteIndex += 1) {
       const midiNote = PITCH_LANE_START_MIDI + noteIndex;
       const key = document.createElement("button");
@@ -3411,17 +3626,11 @@ function renderPitchLanes() {
       if (activeMidi !== null && midiNote === activeMidi) {
         key.classList.add("is-active");
       }
-      if (selectedPitchCell != null && midiNote === getAssignedTrackStepPitchMidi(track, selectedPitchCell)) {
-        key.classList.add("is-pitch-target");
-      }
       key.dataset.trackIndex = String(index);
       key.dataset.midiNote = String(midiNote);
       key.title = `${NOTE_NAMES[getMidiPitchClass(midiNote)]}${Math.floor(midiNote / 12) - 1}`;
       key.addEventListener("click", () => {
         state.selectedTrackIndex = index;
-        if (selectedPitchCell != null) {
-          getTrackPattern(track).stepPitches[selectedPitchCell] = midiNote;
-        }
         syncUi();
         renderTrackSelector();
         renderEffectsMatrix();
@@ -5311,9 +5520,7 @@ function activateTrackPattern(trackIndex, patternIndex, {
   if (markDefined) activePattern.isDefined = true;
   syncTrackPlaybackStateForPatternSwitch(trackIndex, previousPattern, { resetToStart: resetPlaybackToStart });
   state.playback?.updateTrackBus(trackIndex, track);
-  if (state.pitchStepSelection.trackIndex === trackIndex) {
-    state.pitchStepSelection = { trackIndex: null, cellIndex: null };
-  }
+  clearTrackStepSelection(trackIndex);
   if (render) refreshAfterTrackPatternActivation({ persist });
 }
 
@@ -5716,43 +5923,50 @@ function renderPattern(activeStep = state.currentTransportStep) {
         }
 
         const enabled = displayPattern.pattern[cellIndex];
-        const pitchSelected = state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex;
+        const selected = isStepSelected(trackIndex, cellIndex);
         const isBarStart = cellIndex % Math.max(1, displayPattern.stepCount) === 0;
         const stepButton = document.createElement("button");
-        stepButton.className = `step compact${enabled ? " active" : ""}${pitchSelected ? " pitch-target" : ""}`;
+        stepButton.className = `step compact${enabled ? " active" : ""}${selected ? " selected" : ""}`;
         applyTrackColor(stepButton, track.color);
         stepButton.dataset.trackIndex = String(trackIndex);
         stepButton.dataset.cellIndex = String(cellIndex);
         if (cellIndex > 0 && isBarStart) stepButton.classList.add("bar-start");
         stepButton.textContent = isBarStart ? "1" : "";
         stepButton.title = `Bar ${Math.floor(cellIndex / Math.max(1, displayPattern.stepCount)) + 1}, Step ${(cellIndex % Math.max(1, displayPattern.stepCount)) + 1}`;
-        stepButton.setAttribute("aria-label", stepButton.title);
+        stepButton.setAttribute("aria-label", `${stepButton.title}${selected ? ", selected" : ""}`);
+        stepButton.setAttribute("aria-pressed", String(enabled));
         stepButton.addEventListener("click", (event) => {
           state.selectedTrackIndex = trackIndex;
-          if (event.shiftKey && displayPattern.pattern[cellIndex]) {
-            state.pitchStepSelection = { trackIndex, cellIndex };
+          if (event.metaKey) {
+            event.preventDefault();
+            toggleStepSelection(trackIndex, cellIndex);
             syncUi();
             renderTrackSelector();
             renderEffectsMatrix();
             renderMixer();
             renderPattern(activeStep);
             drawWaveform();
-            writeStoredSession();
             return;
           }
-          if (!event.shiftKey && state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex) {
-            state.pitchStepSelection = { trackIndex: null, cellIndex: null };
+          if (event.shiftKey) {
+            event.preventDefault();
+            selectStepRangeBackward(trackIndex, cellIndex);
+            syncUi();
+            renderTrackSelector();
+            renderEffectsMatrix();
+            renderMixer();
+            renderPattern(activeStep);
+            drawWaveform();
+            return;
           }
           displayPattern.pattern[cellIndex] = !displayPattern.pattern[cellIndex];
           if (displayPattern.pattern[cellIndex]) {
             assignPitchFillToStep(track, cellIndex, displayPattern);
           } else {
             displayPattern.stepPitches[cellIndex] = null;
-            if (state.pitchStepSelection.trackIndex === trackIndex && state.pitchStepSelection.cellIndex === cellIndex) {
-              state.pitchStepSelection = { trackIndex: null, cellIndex: null };
-            }
           }
           stepButton.classList.toggle("active", displayPattern.pattern[cellIndex]);
+          stepButton.setAttribute("aria-pressed", String(displayPattern.pattern[cellIndex]));
           syncUi();
           renderEffectsMatrix();
           renderMixer();
@@ -5864,6 +6078,7 @@ function syncUi() {
   syncDelayOverlay();
   syncDriftOverlay();
   syncSwellOverlay();
+  syncSequencerActions();
   ui.regionStart.value = String(Math.round(state.sample.regionStart * 1000));
   ui.regionEnd.value = String(Math.round(state.sample.regionEnd * 1000));
   ui.sliceCount.value = String(voice.sliceCount);
@@ -5880,7 +6095,7 @@ function updateSelectedTrack(patch) {
   Object.assign(getSelectedTrack(), patch);
   if ("voiceIndex" in patch || "activePatternIndex" in patch) resetTrackPlaybackState(state.selectedTrackIndex);
   if ("activePatternIndex" in patch) {
-    state.pitchStepSelection = { trackIndex: null, cellIndex: null };
+    clearTrackStepSelection(state.selectedTrackIndex);
   }
   state.playback?.updateTrackBus(state.selectedTrackIndex, getSelectedTrack());
   syncUi();
@@ -5899,6 +6114,7 @@ function updateSelectedTrackPattern(patch) {
   activePattern.isDefined = true;
   Object.assign(activePattern, patch);
   if ("stepCount" in patch || "playbackMode" in patch || "barCount" in patch || "envelope" in patch) resetTrackPlaybackState(state.selectedTrackIndex);
+  if ("stepCount" in patch || "barCount" in patch) pruneSelectedSteps();
   if ("stepFill" in patch) {
     activePattern.pattern = buildTrackFillPattern(track);
     applyTrackPitchFill(track);
@@ -6127,7 +6343,7 @@ function clearCurrentSessionSettings() {
   state.trackPlaybackState = state.tracks.map((track) => createTrackPlaybackState(track));
   state.trackIndicators = Array.from({ length: TRACK_COUNT }, () => null);
   state.chopPlayheadPositions = Array.from({ length: TRACK_COUNT }, () => null);
-  state.pitchStepSelection = { trackIndex: null, cellIndex: null };
+  state.selectedStepKeys.clear();
   state.currentTransportStep = -1;
   state.mixVolume = 0.9;
   state.composer = createDefaultComposerState();
@@ -6405,6 +6621,11 @@ ui.patternSwitchInstant?.addEventListener("click", () => {
 ui.patternSwitchOnOne?.addEventListener("click", () => {
   setPatternSwitchMode("on-one");
 });
+ui.sequencerCopyTrack?.addEventListener("click", copySelectedTrackPattern);
+ui.sequencerPasteTrack?.addEventListener("click", pasteCopiedTrackPattern);
+ui.sequencerShiftLeft?.addEventListener("click", () => rotateSelectedTrackPattern(-1));
+ui.sequencerShiftRight?.addEventListener("click", () => rotateSelectedTrackPattern(1));
+ui.sequencerDeselectAll?.addEventListener("click", deselectAllSteps);
 ui.trackStepFillType.addEventListener("change", () => {
   const nextType = ui.trackStepFillType.value;
   const currentPattern = getSelectedTrackPattern();
