@@ -316,50 +316,110 @@
                       <h3 id="chop-playback-title">Playback</h3>
                     </div>
                     <div class="control-grid track-settings-grid chop-playback-grid">
-                      <label class="compact-field">
-                        Playhead Behavior
-                        <select id="chop-playhead-behavior">
-                          <option value="fixed">Fixed Position</option>
-                          <option value="random">Random</option>
-                          <option value="note">Jump to Note</option>
-                        </select>
-                      </label>
-                      <label class="compact-field" id="chop-playhead-position-field">
-                        Playhead Position
-                        <div class="slider-row">
-                          <input id="chop-playhead-position" type="range" min="0" max="100" value="0" />
-                          <span id="chop-playhead-position-value" class="value-pill">0%</span>
+                      <div class="chop-playback-subgroup" aria-label="Playback position settings">
+                        <label class="compact-field">
+                          Playhead Behavior
+                          <select id="chop-playhead-behavior">
+                            <option value="fixed">Fixed Position</option>
+                            <option value="random">Random</option>
+                            <option value="note">Jump to Note</option>
+                          </select>
+                        </label>
+                        <label class="compact-field" id="chop-playhead-position-field">
+                          Playhead Position
+                          <div class="slider-row">
+                            <input id="chop-playhead-position" type="range" min="0" max="100" value="0" />
+                            <span id="chop-playhead-position-value" class="value-pill">0%</span>
+                          </div>
+                        </label>
+                        <label class="compact-field">
+                          Playback Length
+                          <div class="slider-row">
+                            <input id="chop-playback-length" type="range" min="50" max="1500" step="10" value="150" />
+                            <span id="chop-playback-length-value" class="value-pill">150ms</span>
+                          </div>
+                        </label>
+                      </div>
+                      <div class="chop-playback-subgroup chop-playback-options-subgroup" aria-label="Playback mode settings">
+                        <div class="chop-toggle-row">
+                          <div class="chop-toggle-control">
+                            <span class="composer-playback-label">Reverse</span>
+                            <button id="chop-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off">
+                              <span class="composer-slot-switch-track" aria-hidden="true">
+                                <span class="composer-slot-switch-thumb"></span>
+                              </span>
+                            </button>
+                          </div>
+                          <div class="chop-toggle-control">
+                            <span class="composer-playback-label">Use Note Pitch</span>
+                            <button id="chop-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Use note pitch off">
+                              <span class="composer-slot-switch-track" aria-hidden="true">
+                                <span class="composer-slot-switch-thumb"></span>
+                              </span>
+                            </button>
+                          </div>
                         </div>
-                      </label>
-                      <label class="compact-field">
-                        Playback Length
-                        <div class="slider-row">
-                          <input id="chop-playback-length" type="range" min="50" max="1500" step="10" value="150" />
-                          <span id="chop-playback-length-value" class="value-pill">150ms</span>
-                        </div>
-                      </label>
-                      <div class="chop-toggle-row">
-                        <div class="chop-toggle-control">
-                          <span class="composer-playback-label">Reverse</span>
-                          <button id="chop-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off">
-                            <span class="composer-slot-switch-track" aria-hidden="true">
-                              <span class="composer-slot-switch-thumb"></span>
-                            </span>
-                          </button>
-                        </div>
-                        <div class="chop-toggle-control">
-                          <span class="composer-playback-label">Use Note Pitch</span>
-                          <button id="chop-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Use note pitch off">
-                            <span class="composer-slot-switch-track" aria-hidden="true">
-                              <span class="composer-slot-switch-thumb"></span>
-                            </span>
-                          </button>
+                        <div class="voice-operation-button-group chop-playback-mode-group" role="group" aria-label="Chop playback mode">
+                          <button id="chop-play-one-shot" type="button">1 Shot</button>
+                          <button id="chop-play-loop" type="button">Loop</button>
                         </div>
                       </div>
-                      <div class="voice-operation-button-group chop-playback-mode-group" role="group" aria-label="Chop playback mode">
-                        <button id="chop-play-one-shot" type="button">1 Shot</button>
-                        <button id="chop-play-loop" type="button">Loop</button>
-                      </div>
+                    </div>
+                  </section>
+
+                  <section class="control-group nested-control-group chop-processing-group" aria-labelledby="chop-processing-title">
+                    <div class="control-group-head">
+                      <h3 id="chop-processing-title">Processing</h3>
+                    </div>
+                    <div class="control-stack chop-processing-stack">
+                      <section class="control-group nested-control-group synth-filter-group chop-filter-group" aria-labelledby="chop-filter-group-title">
+                        <div class="control-group-head">
+                          <h3 id="chop-filter-group-title">Filter</h3>
+                        </div>
+                        <label class="compact-field">
+                          Type
+                          <select id="chop-filter-type">
+                            <option value="lowpass">Low Pass</option>
+                            <option value="bandpass">Band Pass</option>
+                            <option value="highpass">High Pass</option>
+                          </select>
+                        </label>
+                        <label class="compact-field">
+                          Frequency
+                          <div class="slider-row">
+                            <input id="chop-filter-frequency" type="range" min="20" max="16000" value="16000" />
+                            <span id="chop-filter-frequency-value" class="value-pill">16.00 kHz</span>
+                          </div>
+                        </label>
+                        <label class="compact-field">
+                          Q
+                          <div class="slider-row">
+                            <input id="chop-filter-q" type="range" min="0.1" max="20" step="0.1" value="0.8" />
+                            <span id="chop-filter-q-value" class="value-pill">0.8</span>
+                          </div>
+                        </label>
+                      </section>
+                      <label class="compact-field">
+                        Amplitude
+                        <div class="slider-row">
+                          <input id="chop-amplitude" type="range" min="0" max="300" value="100" />
+                          <span id="chop-amplitude-value" class="value-pill">100%</span>
+                        </div>
+                      </label>
+                      <label class="compact-field">
+                        Sample Rate
+                        <div class="slider-row">
+                          <input id="chop-sample-rate-reduction" type="range" min="0" max="100" value="0" />
+                          <span id="chop-sample-rate-reduction-value" class="value-pill">Clean</span>
+                        </div>
+                      </label>
+                      <label class="compact-field">
+                        Bit Depth
+                        <div class="slider-row">
+                          <input id="chop-bit-depth" type="range" min="4" max="16" step="1" value="16" />
+                          <span id="chop-bit-depth-value" class="value-pill">16-bit</span>
+                        </div>
+                      </label>
                     </div>
                   </section>
 

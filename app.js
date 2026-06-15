@@ -44,6 +44,17 @@ const ui = {
   chopUseNotePitchToggle: document.querySelector("#chop-use-note-pitch-toggle"),
   chopPlayOneShot: document.querySelector("#chop-play-one-shot"),
   chopPlayLoop: document.querySelector("#chop-play-loop"),
+  chopFilterType: document.querySelector("#chop-filter-type"),
+  chopFilterFrequency: document.querySelector("#chop-filter-frequency"),
+  chopFilterFrequencyValue: document.querySelector("#chop-filter-frequency-value"),
+  chopFilterQ: document.querySelector("#chop-filter-q"),
+  chopFilterQValue: document.querySelector("#chop-filter-q-value"),
+  chopAmplitude: document.querySelector("#chop-amplitude"),
+  chopAmplitudeValue: document.querySelector("#chop-amplitude-value"),
+  chopSampleRateReduction: document.querySelector("#chop-sample-rate-reduction"),
+  chopSampleRateReductionValue: document.querySelector("#chop-sample-rate-reduction-value"),
+  chopBitDepth: document.querySelector("#chop-bit-depth"),
+  chopBitDepthValue: document.querySelector("#chop-bit-depth-value"),
   chopWaveform: document.querySelector("#chop-waveform"),
   chopWaveformOverview: document.querySelector("#chop-waveform-overview"),
   synthSettingsGroup: document.querySelector("#synth-settings-group"),
@@ -349,6 +360,21 @@ function clampSynthFoldAmount(value, fallback = 0) {
 function clampSynthLevel(value, fallback = 70) {
   const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
   return Math.max(0, Math.min(100, resolved));
+}
+
+function clampChopAmplitude(value, fallback = 100) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(0, Math.min(300, resolved));
+}
+
+function clampChopSampleRateReduction(value, fallback = 0) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(0, Math.min(100, resolved));
+}
+
+function clampChopBitDepth(value, fallback = 16) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(4, Math.min(16, Math.round(resolved)));
 }
 
 function clampSynthWaveShape(value, fallback = 50) {
@@ -712,6 +738,13 @@ function formatFilterFrequencyValue(value) {
   return safeValue >= 1000 ? `${(safeValue / 1000).toFixed(2)} kHz` : `${Math.round(safeValue)} Hz`;
 }
 
+function formatChopSampleRateReduction(value) {
+  const amount = clampChopSampleRateReduction(value);
+  if (amount <= 0) return "Clean";
+  const divisor = Math.round(1 + (amount / 100) * 31);
+  return `1/${divisor}`;
+}
+
 function getRotaryAngleFromPercent(value) {
   const percent = Math.max(0, Math.min(100, Number(value) || 0));
   return -135 + (percent / 100) * 270;
@@ -1048,6 +1081,7 @@ class PlaybackLayer {
     sustainDuration = null,
     envelope = createDefaultTrackEnvelope(),
     sampleLayer = this.sampleLayer,
+    processing = null,
   }) {
     const baseBuffer = sampleLayer?.buffer;
     const buffer = reverse ? sampleLayer?.reversedBuffer : baseBuffer;
@@ -1064,7 +1098,9 @@ class PlaybackLayer {
     const gateDuration = loop ? Math.max(safeDuration, sustainDuration ?? safeDuration) : Math.max(safeDuration, sustainDuration ?? safeDuration);
     const envelopeTiming = applyTrackEnvelopeToGain(voiceGain.gain, when, gateDuration, envelope, 0.75 * level);
 
-    source.connect(voiceGain);
+    const processingNodes = this.createSampleProcessingNodes(processing);
+    source.connect(processingNodes.input);
+    processingNodes.output.connect(voiceGain);
     const busInput = this.trackBuses?.[trackIndex]?.input ?? this.output;
     voiceGain.connect(busInput);
 
@@ -1083,6 +1119,7 @@ class PlaybackLayer {
       source.stop(baseStopTime);
       window.setTimeout(() => {
         source.disconnect?.();
+        processingNodes.disconnect();
         voiceGain.disconnect?.();
       }, Math.max(0, disconnectDelayMs));
       let stopped = false;
@@ -1102,6 +1139,7 @@ class PlaybackLayer {
     source.stop(Math.max(when + safeDuration, baseStopTime));
     window.setTimeout(() => {
       source.disconnect?.();
+      processingNodes.disconnect();
       voiceGain.disconnect?.();
     }, Math.max(0, disconnectDelayMs));
     let stopped = false;
@@ -1116,6 +1154,80 @@ class PlaybackLayer {
         } catch {}
       },
     };
+  }
+
+  createSampleProcessingNodes(processing = null) {
+    const input = this.audioContext.createGain();
+    const makeupGain = this.audioContext.createGain();
+    const filterNode = this.audioContext.createBiquadFilter();
+    const reductionNode = this.createSampleReductionNode(processing);
+    const output = this.audioContext.createGain();
+    const amplitude = clampChopAmplitude(processing?.amplitude ?? 100, 100) / 100;
+    const filterFrequency = clampFilterFrequency(processing?.filterFrequency ?? 16000);
+    const filterQ = clampFilterQ(processing?.filterQ ?? 0.8);
+    const useFilter = filterFrequency < 15999 || filterQ > 0.81 || (processing?.filterType && processing.filterType !== "lowpass");
+
+    makeupGain.gain.setValueAtTime(amplitude, this.audioContext.currentTime);
+    let stage = input;
+
+    if (reductionNode) {
+      stage.connect(reductionNode);
+      stage = reductionNode;
+    }
+
+    if (useFilter) {
+      filterNode.type = FILTER_TYPES.includes(processing?.filterType) ? processing.filterType : "lowpass";
+      filterNode.frequency.setValueAtTime(filterFrequency, this.audioContext.currentTime);
+      filterNode.Q.setValueAtTime(filterQ, this.audioContext.currentTime);
+      stage.connect(filterNode);
+      stage = filterNode;
+    }
+
+    stage.connect(makeupGain);
+    makeupGain.connect(output);
+
+    return {
+      input,
+      output,
+      disconnect: () => {
+        input.disconnect?.();
+        makeupGain.disconnect?.();
+        filterNode.disconnect?.();
+        reductionNode?.disconnect?.();
+        output.disconnect?.();
+      },
+    };
+  }
+
+  createSampleReductionNode(processing = null) {
+    const sampleRateReduction = clampChopSampleRateReduction(processing?.sampleRateReduction ?? 0);
+    const bitDepth = clampChopBitDepth(processing?.bitDepth ?? 16);
+    if (sampleRateReduction <= 0 && bitDepth >= 16) return null;
+
+    const node = this.audioContext.createScriptProcessor(512, 2, 2);
+    const step = 2 / ((2 ** bitDepth) - 1);
+    const holdSamples = Math.max(1, Math.round(1 + (sampleRateReduction / 100) * 31));
+    const heldSamples = [0, 0];
+    const holdIndexes = [0, 0];
+
+    node.onaudioprocess = (event) => {
+      const inputChannelCount = event.inputBuffer.numberOfChannels;
+      const outputChannelCount = event.outputBuffer.numberOfChannels;
+      for (let channel = 0; channel < outputChannelCount; channel += 1) {
+        const input = event.inputBuffer.getChannelData(Math.min(channel, inputChannelCount - 1));
+        const output = event.outputBuffer.getChannelData(channel);
+        for (let index = 0; index < output.length; index += 1) {
+          if (holdIndexes[channel] <= 0) {
+            heldSamples[channel] = Math.round(input[index] / step) * step;
+            holdIndexes[channel] = holdSamples;
+          }
+          output[index] = Math.max(-1, Math.min(1, heldSamples[channel]));
+          holdIndexes[channel] -= 1;
+        }
+      }
+    };
+
+    return node;
   }
 
   triggerGranular(settings, when = this.audioContext.currentTime, sliceIndex = null, noteDuration = 0.1) {
@@ -1205,6 +1317,14 @@ class PlaybackLayer {
       sustainDuration: Math.max(playbackDuration, noteDuration ?? playbackDuration),
       envelope: track.envelope,
       sampleLayer,
+      processing: {
+        filterType: voice.chopFilterType,
+        filterFrequency: voice.chopFilterFrequency,
+        filterQ: voice.chopFilterQ,
+        amplitude: voice.chopAmplitude,
+        sampleRateReduction: voice.chopSampleRateReduction,
+        bitDepth: voice.chopBitDepth,
+      },
     });
     if (handle) {
       this.state.chopPlayheadPositions[voiceIndex] = window.playhead;
@@ -1647,6 +1767,12 @@ function createVoiceConfig(id) {
     chopPlaybackLengthUnit: CHOP_PLAYBACK_LENGTH_UNIT,
     chopUseNotePitch: false,
     chopPlaybackMode: "one-shot",
+    chopFilterType: "lowpass",
+    chopFilterFrequency: 16000,
+    chopFilterQ: 0.8,
+    chopAmplitude: 100,
+    chopSampleRateReduction: 0,
+    chopBitDepth: 16,
     sliceCount: 8,
     synthWave: "sine",
     synthWaveShape: 50,
@@ -2484,6 +2610,12 @@ function serializeVoice(voice) {
     chopPlaybackLengthUnit: voice.chopPlaybackLengthUnit,
     chopUseNotePitch: voice.chopUseNotePitch,
     chopPlaybackMode: voice.chopPlaybackMode,
+    chopFilterType: voice.chopFilterType,
+    chopFilterFrequency: voice.chopFilterFrequency,
+    chopFilterQ: voice.chopFilterQ,
+    chopAmplitude: voice.chopAmplitude,
+    chopSampleRateReduction: voice.chopSampleRateReduction,
+    chopBitDepth: voice.chopBitDepth,
     sliceCount: voice.sliceCount,
     synthWave: voice.synthWave,
     synthWaveShape: voice.synthWaveShape,
@@ -2523,6 +2655,12 @@ function normalizeVoice(index, source = {}) {
     chopPlaybackLengthUnit: CHOP_PLAYBACK_LENGTH_UNIT,
     chopUseNotePitch: Boolean(source.chopUseNotePitch),
     chopPlaybackMode: CHOP_PLAYBACK_MODES.includes(source.chopPlaybackMode) ? source.chopPlaybackMode : fallback.chopPlaybackMode,
+    chopFilterType: FILTER_TYPES.includes(source.chopFilterType) ? source.chopFilterType : fallback.chopFilterType,
+    chopFilterFrequency: clampFilterFrequency(source.chopFilterFrequency ?? fallback.chopFilterFrequency),
+    chopFilterQ: clampFilterQ(source.chopFilterQ ?? fallback.chopFilterQ),
+    chopAmplitude: clampChopAmplitude(source.chopAmplitude ?? fallback.chopAmplitude, fallback.chopAmplitude),
+    chopSampleRateReduction: clampChopSampleRateReduction(source.chopSampleRateReduction ?? fallback.chopSampleRateReduction, fallback.chopSampleRateReduction),
+    chopBitDepth: clampChopBitDepth(source.chopBitDepth ?? fallback.chopBitDepth, fallback.chopBitDepth),
     sliceCount: clampNumber(source.sliceCount, 2, 16, fallback.sliceCount),
     synthWave: SYNTH_WAVES.includes(source.synthWave) ? source.synthWave : fallback.synthWave,
     synthWaveShape: clampSynthWaveShape(source.synthWaveShape ?? fallback.synthWaveShape, fallback.synthWaveShape),
@@ -6035,6 +6173,17 @@ function syncUi() {
   ui.chopPlayOneShot?.setAttribute("aria-pressed", String(voice.chopPlaybackMode !== "loop"));
   ui.chopPlayLoop?.classList.toggle("active", voice.chopPlaybackMode === "loop");
   ui.chopPlayLoop?.setAttribute("aria-pressed", String(voice.chopPlaybackMode === "loop"));
+  if (ui.chopFilterType) ui.chopFilterType.value = voice.chopFilterType;
+  if (ui.chopFilterFrequency) ui.chopFilterFrequency.value = String(voice.chopFilterFrequency);
+  if (ui.chopFilterFrequencyValue) ui.chopFilterFrequencyValue.textContent = formatFilterFrequencyValue(voice.chopFilterFrequency);
+  if (ui.chopFilterQ) ui.chopFilterQ.value = String(voice.chopFilterQ);
+  if (ui.chopFilterQValue) ui.chopFilterQValue.textContent = voice.chopFilterQ.toFixed(1);
+  if (ui.chopAmplitude) ui.chopAmplitude.value = String(voice.chopAmplitude);
+  if (ui.chopAmplitudeValue) ui.chopAmplitudeValue.textContent = `${Math.round(voice.chopAmplitude)}%`;
+  if (ui.chopSampleRateReduction) ui.chopSampleRateReduction.value = String(voice.chopSampleRateReduction);
+  if (ui.chopSampleRateReductionValue) ui.chopSampleRateReductionValue.textContent = formatChopSampleRateReduction(voice.chopSampleRateReduction);
+  if (ui.chopBitDepth) ui.chopBitDepth.value = String(voice.chopBitDepth);
+  if (ui.chopBitDepthValue) ui.chopBitDepthValue.textContent = `${voice.chopBitDepth}-bit`;
   ui.synthWave.value = voice.synthWave;
   ui.synthWaveShape.value = String(voice.synthWaveShape);
   ui.synthWaveShapeValue.textContent = `${Math.round(voice.synthWaveShape)}%`;
@@ -6150,6 +6299,12 @@ function updateSelectedVoice(patch) {
     "chopPlaybackLength",
     "chopUseNotePitch",
     "chopPlaybackMode",
+    "chopFilterType",
+    "chopFilterFrequency",
+    "chopFilterQ",
+    "chopAmplitude",
+    "chopSampleRateReduction",
+    "chopBitDepth",
   ];
   const shouldResetPlayback = resetKeys.some((key) => key in patch);
   if (
@@ -6521,6 +6676,12 @@ ui.chopReverseToggle?.addEventListener("click", () => updateSelectedVoice({ reve
 ui.chopUseNotePitchToggle?.addEventListener("click", () => updateSelectedVoice({ chopUseNotePitch: !getSelectedVoice().chopUseNotePitch }));
 ui.chopPlayOneShot?.addEventListener("click", () => updateSelectedVoice({ chopPlaybackMode: "one-shot" }));
 ui.chopPlayLoop?.addEventListener("click", () => updateSelectedVoice({ chopPlaybackMode: "loop" }));
+ui.chopFilterType?.addEventListener("change", () => updateSelectedVoice({ chopFilterType: ui.chopFilterType.value }));
+ui.chopFilterFrequency?.addEventListener("input", () => updateSelectedVoice({ chopFilterFrequency: Number(ui.chopFilterFrequency.value) }));
+ui.chopFilterQ?.addEventListener("input", () => updateSelectedVoice({ chopFilterQ: Number(ui.chopFilterQ.value) }));
+ui.chopAmplitude?.addEventListener("input", () => updateSelectedVoice({ chopAmplitude: Number(ui.chopAmplitude.value) }));
+ui.chopSampleRateReduction?.addEventListener("input", () => updateSelectedVoice({ chopSampleRateReduction: Number(ui.chopSampleRateReduction.value) }));
+ui.chopBitDepth?.addEventListener("input", () => updateSelectedVoice({ chopBitDepth: Number(ui.chopBitDepth.value) }));
 ui.trackBars.addEventListener("input", () => updateSelectedTrackPattern({ barCount: Number(ui.trackBars.value) }));
 ui.trackSteps.addEventListener("input", () => updateSelectedTrackPattern({ stepCount: Number(ui.trackSteps.value) }));
 ui.trackPlaybackMode.addEventListener("change", () => updateSelectedTrackPattern({ playbackMode: ui.trackPlaybackMode.value }));
