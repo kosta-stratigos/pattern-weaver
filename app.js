@@ -2183,7 +2183,6 @@ function refreshAfterSequencerTranspose(changedTrackIndexes) {
   changedTrackIndexes.forEach((trackIndex) => {
     const track = state.tracks[trackIndex];
     if (!track) return;
-    resetTrackPlaybackState(trackIndex);
     state.chopPlayheadPositions[track.voiceIndex] = null;
     state.playback?.updateTrackBus(trackIndex, track);
   });
