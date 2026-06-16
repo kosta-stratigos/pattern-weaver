@@ -192,15 +192,25 @@ const ui = {
   mixVolumeValue: document.querySelector("#mix-volume-value"),
   mixerGrid: document.querySelector("#mixer-grid"),
   patternGrid: document.querySelector("#pattern-grid"),
+  sequencerTranspose: document.querySelector("#sequencer-transpose"),
+  sequencerSync: document.querySelector("#sequencer-sync"),
   sequencerCopyTrack: document.querySelector("#sequencer-copy-track"),
   sequencerPasteTrack: document.querySelector("#sequencer-paste-track"),
   sequencerShiftLeft: document.querySelector("#sequencer-shift-left"),
   sequencerShiftRight: document.querySelector("#sequencer-shift-right"),
   sequencerDeselectAll: document.querySelector("#sequencer-deselect-all"),
   sequencePatternSwitcher: document.querySelector("#sequence-pattern-switcher"),
-  patternSwitcherSync: document.querySelector("#pattern-switcher-sync"),
   patternSwitchInstant: document.querySelector("#pattern-switch-instant"),
   patternSwitchOnOne: document.querySelector("#pattern-switch-on-one"),
+  transposeOverlay: document.querySelector("#transpose-overlay"),
+  transposeClose: document.querySelector("#transpose-close"),
+  transposeCancel: document.querySelector("#transpose-cancel"),
+  transposeApply: document.querySelector("#transpose-apply"),
+  transposeOctave: document.querySelector("#transpose-octave"),
+  transposeSemitone: document.querySelector("#transpose-semitone"),
+  transposeAmount: document.querySelector("#transpose-amount"),
+  transposeAmountValue: document.querySelector("#transpose-amount-value"),
+  transposeTarget: document.querySelector("#transpose-target"),
 };
 
 const STORAGE_KEY = "granular-chop-lab:session";
@@ -264,6 +274,9 @@ const VOICE_FILE_VERSION = 1;
 const SESSION_FILE_TYPE = "pattern-weaver.session";
 const SESSION_FILE_VERSION = 1;
 const DEFAULT_SESSION_NAME = "Untitled Session";
+const TRANSPOSE_MODES = ["octave", "semitone"];
+const TRANSPOSE_OCTAVE_RANGE = 4;
+const TRANSPOSE_SEMITONE_RANGE = 12;
 
 function updateRangeFill(input) {
   if (!(input instanceof HTMLInputElement) || input.type !== "range") return;
@@ -1870,6 +1883,11 @@ const state = {
   sessionClearOverlay: {
     open: false,
   },
+  transposeOverlay: {
+    open: false,
+    mode: "semitone",
+    amount: 0,
+  },
   selectedStepKeys: new Set(),
   copiedTrackPattern: null,
   currentTransportStep: -1,
@@ -2098,6 +2116,122 @@ function deselectAllSteps() {
   renderPattern(state.currentTransportStep);
   syncSequencerActions();
   setDiagnostics("selected steps cleared.", "ok");
+}
+
+function normalizeTransposeMode(mode) {
+  return TRANSPOSE_MODES.includes(mode) ? mode : "semitone";
+}
+
+function getTransposeAmountRange(mode = state.transposeOverlay.mode) {
+  return normalizeTransposeMode(mode) === "octave"
+    ? { min: -TRANSPOSE_OCTAVE_RANGE, max: TRANSPOSE_OCTAVE_RANGE }
+    : { min: -TRANSPOSE_SEMITONE_RANGE, max: TRANSPOSE_SEMITONE_RANGE };
+}
+
+function clampTransposeAmount(value, mode = state.transposeOverlay.mode) {
+  const { min, max } = getTransposeAmountRange(mode);
+  const resolved = Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0;
+  return Math.max(min, Math.min(max, resolved));
+}
+
+function getTransposeSemitoneOffset(mode = state.transposeOverlay.mode, amount = state.transposeOverlay.amount) {
+  const safeMode = normalizeTransposeMode(mode);
+  const safeAmount = clampTransposeAmount(amount, safeMode);
+  return safeAmount * (safeMode === "octave" ? 12 : 1);
+}
+
+function formatTransposeAmount(mode = state.transposeOverlay.mode, amount = state.transposeOverlay.amount) {
+  const safeMode = normalizeTransposeMode(mode);
+  const safeAmount = clampTransposeAmount(amount, safeMode);
+  const suffix = safeMode === "octave" ? "oct" : "st";
+  return `${safeAmount > 0 ? "+" : ""}${safeAmount} ${suffix}`;
+}
+
+function getTransposeTargets() {
+  pruneSelectedSteps();
+  const selectedTargets = Array.from(state.selectedStepKeys)
+    .map(parseStepSelectionKey)
+    .filter(Boolean)
+    .filter(({ trackIndex, cellIndex }) => {
+      const track = state.tracks[trackIndex];
+      const pattern = track ? getTrackPattern(track) : null;
+      return Boolean(pattern?.pattern?.[cellIndex]) && cellIndex < getTrackVisibleCellCount(track, pattern);
+    });
+
+  if (state.selectedStepKeys.size > 0) return selectedTargets;
+
+  const track = getSelectedTrack();
+  const activePattern = getTrackPattern(track);
+  const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
+  const targets = [];
+  for (let cellIndex = 0; cellIndex < visibleCellCount; cellIndex += 1) {
+    if (activePattern.pattern[cellIndex]) {
+      targets.push({ trackIndex: state.selectedTrackIndex, cellIndex });
+    }
+  }
+  return targets;
+}
+
+function getTransposeTargetLabel(targets = getTransposeTargets()) {
+  if (state.selectedStepKeys.size > 0) {
+    return targets.length === 1 ? "1 selected note" : `${targets.length} selected notes`;
+  }
+  return `${formatTrackName(getSelectedTrack(), state.selectedTrackIndex)} active notes`;
+}
+
+function refreshAfterSequencerTranspose(changedTrackIndexes) {
+  changedTrackIndexes.forEach((trackIndex) => {
+    const track = state.tracks[trackIndex];
+    if (!track) return;
+    resetTrackPlaybackState(trackIndex);
+    state.chopPlayheadPositions[track.voiceIndex] = null;
+    state.playback?.updateTrackBus(trackIndex, track);
+  });
+  syncUi();
+  renderTrackSelector();
+  renderEffectsMatrix();
+  renderSequencePatternSwitcher();
+  renderMixer();
+  renderPattern();
+  renderPitchLanes();
+  drawWaveform();
+  syncSequencerActions();
+  writeStoredSession();
+}
+
+function transposeSequencerNotes(mode = state.transposeOverlay.mode, amount = state.transposeOverlay.amount) {
+  const semitoneOffset = getTransposeSemitoneOffset(mode, amount);
+  if (semitoneOffset === 0) {
+    closeTransposeOverlay();
+    return;
+  }
+
+  const targets = getTransposeTargets();
+  if (!targets.length) {
+    setDiagnostics("activate notes before transposing.", "warn");
+    syncTransposeOverlay();
+    return;
+  }
+
+  const changedTrackIndexes = new Set();
+  targets.forEach(({ trackIndex, cellIndex }) => {
+    const track = state.tracks[trackIndex];
+    const activePattern = track ? getTrackPattern(track) : null;
+    if (!track || !activePattern?.pattern?.[cellIndex]) return;
+    const rawPitch = activePattern.stepPitches[cellIndex] ?? getTrackPitchMidi(track);
+    activePattern.stepPitches[cellIndex] = clampMidiNote(rawPitch + semitoneOffset, rawPitch);
+    changedTrackIndexes.add(trackIndex);
+  });
+
+  if (!changedTrackIndexes.size) {
+    setDiagnostics("activate notes before transposing.", "warn");
+    syncTransposeOverlay();
+    return;
+  }
+
+  refreshAfterSequencerTranspose(changedTrackIndexes);
+  setDiagnostics(`${targets.length} note${targets.length === 1 ? "" : "s"} transposed ${formatTransposeAmount(mode, amount)}.`, "ok");
+  closeTransposeOverlay();
 }
 
 function getSelectedTrack() {
@@ -3149,9 +3283,10 @@ function getTrackPitchMidi(track) {
 
 function getTrackStepPitchMidi(track, cellIndex = null, pattern = getTrackPattern(track)) {
   const activePattern = pattern ?? getTrackPattern(track);
-  if (!Number.isInteger(cellIndex) || cellIndex < 0) return getTrackPitchMidi(track);
+  if (!Number.isInteger(cellIndex) || cellIndex < 0) return quantizeMidiToTrackScale(track, getTrackPitchMidi(track));
   const stepPitch = activePattern.stepPitches?.[cellIndex];
-  return stepPitch == null ? getTrackPitchMidi(track) : clampMidiNote(stepPitch, getTrackPitchMidi(track));
+  const rawPitch = stepPitch == null ? getTrackPitchMidi(track) : clampMidiNote(stepPitch, getTrackPitchMidi(track));
+  return quantizeMidiToTrackScale(track, rawPitch);
 }
 
 function getScaleNotesInRange(track, fromMidi, toMidi) {
@@ -3182,11 +3317,6 @@ function quantizeMidiToTrackScale(track, midiNote) {
     if (upperValid) return upper;
   }
   return clamped;
-}
-
-function quantizeTrackStepPitches(track) {
-  const activePattern = getTrackPattern(track);
-  activePattern.stepPitches = activePattern.stepPitches.map((pitch) => (pitch == null ? null : quantizeMidiToTrackScale(track, pitch)));
 }
 
 function applyTrackPitchFill(track) {
@@ -3793,7 +3923,7 @@ function renderPitchLanes() {
     scaleSelect.value = track.scaleMode;
     scaleSelect.addEventListener("change", () => {
       track.scaleMode = normalizeScaleMode(scaleSelect.value, track.scaleMode);
-      quantizeTrackStepPitches(track);
+      resetTrackPlaybackState(index);
       state.chopPlayheadPositions[track.voiceIndex] = null;
       renderPitchLanes();
       renderPattern();
@@ -3862,6 +3992,36 @@ function syncSessionClearOverlay() {
   const isOpen = state.sessionClearOverlay.open;
   ui.sessionClearOverlay.classList.toggle("is-hidden", !isOpen);
   ui.sessionClearOverlay.setAttribute("aria-hidden", String(!isOpen));
+}
+
+function syncTransposeOverlay() {
+  if (!ui.transposeOverlay) return;
+  const isOpen = state.transposeOverlay.open;
+  const mode = normalizeTransposeMode(state.transposeOverlay.mode);
+  const amount = clampTransposeAmount(state.transposeOverlay.amount, mode);
+  const { min, max } = getTransposeAmountRange(mode);
+  state.transposeOverlay.mode = mode;
+  state.transposeOverlay.amount = amount;
+
+  ui.transposeOverlay.classList.toggle("is-hidden", !isOpen);
+  ui.transposeOverlay.setAttribute("aria-hidden", String(!isOpen));
+  ui.transposeOctave?.classList.toggle("active", mode === "octave");
+  ui.transposeOctave?.setAttribute("aria-pressed", String(mode === "octave"));
+  ui.transposeSemitone?.classList.toggle("active", mode === "semitone");
+  ui.transposeSemitone?.setAttribute("aria-pressed", String(mode === "semitone"));
+  if (ui.transposeAmount) {
+    ui.transposeAmount.min = String(min);
+    ui.transposeAmount.max = String(max);
+    ui.transposeAmount.step = "1";
+    ui.transposeAmount.value = String(amount);
+    updateRangeFill(ui.transposeAmount);
+  }
+  if (ui.transposeAmountValue) {
+    ui.transposeAmountValue.textContent = formatTransposeAmount(mode, amount);
+  }
+  if (ui.transposeTarget) {
+    ui.transposeTarget.textContent = getTransposeTargetLabel();
+  }
 }
 
 function getTrackBarCount(track, pattern = getTrackPattern(track)) {
@@ -6220,6 +6380,7 @@ function syncUi() {
   syncWorkspaceTabs();
   syncSessionPanel();
   syncSessionClearOverlay();
+  syncTransposeOverlay();
   syncTransportButton();
   syncTrackSettingsOverlay();
   syncAddPatternOverlay();
@@ -6450,6 +6611,7 @@ async function loadSessionFile(file) {
     state.workspaceTab = "session";
     state.voiceNameOverlay.open = false;
     state.sessionClearOverlay.open = false;
+    state.transposeOverlay.open = false;
     state.filterOverlay.open = false;
     state.delayOverlay.open = false;
     state.driftOverlay.open = false;
@@ -6475,6 +6637,25 @@ function openSessionClearOverlay() {
 function closeSessionClearOverlay() {
   state.sessionClearOverlay.open = false;
   syncSessionClearOverlay();
+}
+
+function openTransposeOverlay() {
+  const targets = getTransposeTargets();
+  if (!targets.length) {
+    setDiagnostics("activate notes before transposing.", "warn");
+    syncSequencerActions();
+    return;
+  }
+  state.transposeOverlay.open = true;
+  state.transposeOverlay.mode = normalizeTransposeMode(state.transposeOverlay.mode);
+  state.transposeOverlay.amount = 0;
+  syncTransposeOverlay();
+}
+
+function closeTransposeOverlay() {
+  state.transposeOverlay.open = false;
+  state.transposeOverlay.amount = 0;
+  syncTransposeOverlay();
 }
 
 function clearCurrentSessionSettings() {
@@ -6511,6 +6692,7 @@ function clearCurrentSessionSettings() {
   state.trackSettingsOverlay.open = false;
   state.addPatternOverlay.open = false;
   state.voiceNameOverlay.open = false;
+  state.transposeOverlay.open = false;
   state.sampleBrowserOpen = false;
   closeSessionClearOverlay();
   syncAllTrackBuses();
@@ -6773,7 +6955,8 @@ ui.composerPlayLoop?.addEventListener("click", () => {
   updateComposerGridState();
   writeStoredSession();
 });
-ui.patternSwitcherSync?.addEventListener("click", () => {
+ui.sequencerTranspose?.addEventListener("click", openTransposeOverlay);
+ui.sequencerSync?.addEventListener("click", () => {
   syncAllTrackPlayheadsToStart();
 });
 ui.patternSwitchInstant?.addEventListener("click", () => {
@@ -6787,6 +6970,27 @@ ui.sequencerPasteTrack?.addEventListener("click", pasteCopiedTrackPattern);
 ui.sequencerShiftLeft?.addEventListener("click", () => rotateSelectedTrackPattern(-1));
 ui.sequencerShiftRight?.addEventListener("click", () => rotateSelectedTrackPattern(1));
 ui.sequencerDeselectAll?.addEventListener("click", deselectAllSteps);
+ui.transposeClose?.addEventListener("click", () => closeTransposeOverlay());
+ui.transposeCancel?.addEventListener("click", () => closeTransposeOverlay());
+ui.transposeApply?.addEventListener("click", () => transposeSequencerNotes());
+ui.transposeOverlay?.addEventListener("click", (event) => {
+  if (!(event.target instanceof HTMLElement)) return;
+  if (event.target.dataset.transposeOverlayClose === "true") closeTransposeOverlay();
+});
+ui.transposeOctave?.addEventListener("click", () => {
+  state.transposeOverlay.mode = "octave";
+  state.transposeOverlay.amount = 0;
+  syncTransposeOverlay();
+});
+ui.transposeSemitone?.addEventListener("click", () => {
+  state.transposeOverlay.mode = "semitone";
+  state.transposeOverlay.amount = 0;
+  syncTransposeOverlay();
+});
+ui.transposeAmount?.addEventListener("input", () => {
+  state.transposeOverlay.amount = clampTransposeAmount(ui.transposeAmount.value, state.transposeOverlay.mode);
+  syncTransposeOverlay();
+});
 ui.trackStepFillType.addEventListener("change", () => {
   const nextType = ui.trackStepFillType.value;
   const currentPattern = getSelectedTrackPattern();
@@ -7109,6 +7313,10 @@ window.addEventListener("keydown", async (event) => {
   }
   if (event.key === "Escape" && state.sessionClearOverlay.open) {
     closeSessionClearOverlay();
+    return;
+  }
+  if (event.key === "Escape" && state.transposeOverlay.open) {
+    closeTransposeOverlay();
     return;
   }
   if (event.key === "Escape" && state.filterOverlay.open) {

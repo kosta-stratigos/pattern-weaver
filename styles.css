@@ -1293,10 +1293,6 @@ input[type="range"]::-moz-range-thumb {
   padding-bottom: 4px;
 }
 
-.pattern-switcher-sync-group {
-  width: 86px;
-}
-
 .pattern-switcher-mode-group {
   min-width: min(100%, 300px);
 }
@@ -1583,6 +1579,10 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .overlay-panel.session-clear-panel {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.overlay-panel.transpose-panel {
   width: min(520px, calc(100vw - 32px));
 }
 
@@ -1882,9 +1882,27 @@ input[type="range"]::-moz-range-thumb {
   flex: 0 0 620px;
 }
 
-.sequencer-action-group button {
+.sequencer-transpose-group {
+  width: 112px;
+}
+
+.sequencer-sync-group {
+  width: 86px;
+}
+
+.sequencer-action-group button,
+.sequencer-transpose-group button,
+.sequencer-sync-group button {
   min-height: 30px;
   padding: 6px 12px;
+}
+
+.transpose-controls-group {
+  gap: 12px;
+}
+
+.transpose-mode-group {
+  width: 100%;
 }
 
 .pattern-row {
