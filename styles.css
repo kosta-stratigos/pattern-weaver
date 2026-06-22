@@ -1156,6 +1156,11 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
+.effects-toggle.settings-selected {
+  outline: 2px solid var(--track-color);
+  outline-offset: 1px;
+}
+
 .effects-toggle.is-armed {
   outline: 2px solid var(--track-color);
   outline-offset: 1px;
@@ -1276,6 +1281,39 @@ input[type="range"]::-moz-range-thumb {
 .workspace-panel-track-effects .effects-matrix,
 .workspace-panel-pattern-switcher .effects-matrix {
   height: auto;
+}
+
+.pattern-effects-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.1fr) minmax(280px, 0.9fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.pattern-effects-matrix-panel,
+.pattern-effect-settings-panel {
+  align-content: start;
+  min-width: 0;
+}
+
+.pattern-effects-matrix-panel .effects-matrix {
+  min-width: 0;
+}
+
+.pattern-effect-settings-panel .control-group-head {
+  display: grid;
+  gap: 4px;
+}
+
+.effect-settings-context {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.pattern-effect-settings-body {
+  gap: 10px;
 }
 
 .workspace-panel-pattern-switcher {
@@ -2111,6 +2149,10 @@ input[type="range"]::-moz-range-thumb {
 
   .effects-row {
     grid-template-columns: 50px repeat(4, minmax(0, 1fr));
+  }
+
+  .pattern-effects-layout {
+    grid-template-columns: 1fr;
   }
 
   .mixer-grid {

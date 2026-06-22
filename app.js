@@ -118,6 +118,9 @@ const ui = {
   synthFilterQValue: document.querySelector("#synth-filter-q-value"),
   synthWaveformScope: document.querySelector("#synth-waveform-scope"),
   effectsMatrix: document.querySelector("#effects-matrix"),
+  patternEffectSettingsTitle: document.querySelector("#pattern-effect-settings-title"),
+  patternEffectSettingsTrack: document.querySelector("#pattern-effect-settings-track"),
+  patternEffectSettingsBody: document.querySelector("#pattern-effect-settings-body"),
   filterOverlay: document.querySelector("#filter-overlay"),
   filterOverlayTrack: document.querySelector("#filter-overlay-track"),
   filterOverlayClose: document.querySelector("#filter-overlay-close"),
@@ -242,6 +245,12 @@ const PITCH_LANE_REFERENCE_MIDI = 60;
 const SYNTH_TUNE_DEFAULT_MIDI = 38;
 const TRACK_COLORS = ["#59d0ff", "#ff8f5a", "#8dff7a", "#ffd34d"];
 const EFFECT_KEYS = ["filter", "delay", "drift", "swell"];
+const EFFECT_LABELS = {
+  filter: "Filter",
+  delay: "Delay",
+  drift: "Drift",
+  swell: "Swell",
+};
 const FILTER_TYPES = ["lowpass", "bandpass", "highpass"];
 const TRACK_PLAYBACK_MODES = ["forward", "ping-pong", "random", "reverse"];
 const PATTERN_SWITCH_MODES = ["instant", "on-one"];
@@ -1888,6 +1897,10 @@ const state = {
     mode: "semitone",
     amount: 0,
   },
+  selectedEffectSettings: {
+    trackIndex: 0,
+    effectKey: "filter",
+  },
   selectedStepKeys: new Set(),
   copiedTrackPattern: null,
   currentTransportStep: -1,
@@ -2241,6 +2254,294 @@ function getTrackEffectContainer(trackOrIndex) {
   const track = Number.isInteger(trackOrIndex) ? state.tracks[trackOrIndex] : trackOrIndex;
   const activePattern = getTrackPattern(track);
   return activePattern?.effects ?? createTrackEffects();
+}
+
+function getSelectedEffectSettingsState() {
+  const trackIndex = Math.max(0, Math.min(TRACK_COUNT - 1, Number(state.selectedEffectSettings?.trackIndex) || 0));
+  const effectKey = EFFECT_KEYS.includes(state.selectedEffectSettings?.effectKey)
+    ? state.selectedEffectSettings.effectKey
+    : "filter";
+  state.selectedEffectSettings = { trackIndex, effectKey };
+  return state.selectedEffectSettings;
+}
+
+function selectPatternEffectSettings(trackIndex, effectKey) {
+  if (!state.tracks[trackIndex] || !EFFECT_KEYS.includes(effectKey)) return;
+  state.selectedTrackIndex = trackIndex;
+  state.selectedEffectSettings = { trackIndex, effectKey };
+  syncUi();
+  renderTrackSelector();
+  renderEffectsMatrix();
+  renderMixer();
+  renderPattern();
+  drawWaveform();
+  writeStoredSession();
+}
+
+function createEffectSettingsSlider({ id, label, min, max, step = 1, value, valueText, onInput }) {
+  const field = document.createElement("label");
+  field.className = "compact-field";
+  field.textContent = label;
+
+  const row = document.createElement("div");
+  row.className = "slider-row";
+
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+  input.addEventListener("input", () => onInput(input));
+
+  const pill = document.createElement("span");
+  pill.id = `${id}-value`;
+  pill.className = "value-pill";
+  pill.textContent = valueText;
+
+  row.append(input, pill);
+  field.append(row);
+  return field;
+}
+
+function createEffectSettingsText({ id, label, value, onChange }) {
+  const field = document.createElement("label");
+  field.className = "compact-field";
+  field.textContent = label;
+
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "text";
+  input.inputMode = "decimal";
+  input.value = String(value);
+  input.addEventListener("change", () => onChange(input));
+
+  field.append(input);
+  return field;
+}
+
+function renderPatternEffectSettingsControls(effectKey) {
+  const body = ui.patternEffectSettingsBody;
+  if (!body) return;
+  body.innerHTML = "";
+  body.dataset.effectKey = effectKey;
+  const selection = getSelectedEffectSettingsState();
+
+  if (effectKey === "filter") {
+    const filter = getTrackFilter(selection.trackIndex);
+    const typeGroup = document.createElement("fieldset");
+    typeGroup.className = "radio-group";
+    const legend = document.createElement("legend");
+    legend.textContent = "Mode";
+    typeGroup.append(legend);
+    FILTER_TYPES.forEach((type) => {
+      const label = document.createElement("label");
+      label.className = "radio-chip";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "pattern-effect-filter-type";
+      radio.value = type;
+      radio.checked = filter.type === type;
+      radio.addEventListener("change", () => {
+        if (radio.checked) updateTrackFilter(getSelectedEffectSettingsState().trackIndex, { type });
+      });
+      const span = document.createElement("span");
+      span.textContent = formatFilterTypeLabel(type);
+      label.append(radio, span);
+      typeGroup.append(label);
+    });
+
+    body.append(
+      typeGroup,
+      createEffectSettingsSlider({
+        id: "pattern-effect-filter-frequency",
+        label: "Frequency",
+        min: 20,
+        max: 16000,
+        value: Math.round(filter.frequency),
+        valueText: formatFilterFrequency(filter.frequency),
+        onInput: (input) => updateTrackFilter(getSelectedEffectSettingsState().trackIndex, { frequency: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "pattern-effect-filter-q",
+        label: "Q",
+        min: 0.1,
+        max: 20,
+        step: 0.1,
+        value: filter.q,
+        valueText: formatFilterQ(filter.q),
+        onInput: (input) => updateTrackFilter(getSelectedEffectSettingsState().trackIndex, { q: Number(input.value) }),
+      }),
+    );
+    return;
+  }
+
+  if (effectKey === "delay") {
+    const delay = getTrackDelay(selection.trackIndex);
+    body.append(
+      createEffectSettingsSlider({
+        id: "pattern-effect-delay-time",
+        label: "Time",
+        min: 40,
+        max: 1200,
+        value: delay.time,
+        valueText: formatDelayTime(delay.time),
+        onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { time: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "pattern-effect-delay-feedback",
+        label: "Feedback",
+        min: 0,
+        max: 95,
+        value: delay.feedback,
+        valueText: formatPercent(delay.feedback, 95),
+        onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { feedback: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "pattern-effect-delay-decay",
+        label: "Decay",
+        min: 0,
+        max: 100,
+        value: delay.decay,
+        valueText: formatPercent(delay.decay),
+        onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { decay: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "pattern-effect-delay-tone",
+        label: "Tone",
+        min: 0,
+        max: 100,
+        value: delay.tone,
+        valueText: formatPercent(delay.tone),
+        onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { tone: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "pattern-effect-delay-mix",
+        label: "Mix",
+        min: 0,
+        max: 100,
+        value: delay.mix,
+        valueText: formatPercent(delay.mix),
+        onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { mix: Number(input.value) }),
+      }),
+    );
+    return;
+  }
+
+  if (effectKey === "drift") {
+    const drift = getTrackDrift(selection.trackIndex);
+    body.append(
+      createEffectSettingsText({
+        id: "pattern-effect-drift-rate",
+        label: "Rate (s)",
+        value: drift.rate,
+        onChange: (input) => updateTrackDrift(getSelectedEffectSettingsState().trackIndex, {
+          rate: sanitizeFloatField(input, getTrackDrift(getSelectedEffectSettingsState().trackIndex).rate),
+        }),
+      }),
+      createEffectSettingsSlider({
+        id: "pattern-effect-drift-amount",
+        label: "Amount (+/- %)",
+        min: 0,
+        max: 100,
+        value: Math.round(drift.amount),
+        valueText: `${Math.round(drift.amount)}%`,
+        onInput: (input) => updateTrackDrift(getSelectedEffectSettingsState().trackIndex, { amount: Number(input.value) }),
+      }),
+    );
+    return;
+  }
+
+  if (effectKey === "swell") {
+    const swell = getTrackSwell(selection.trackIndex);
+    body.append(
+      createEffectSettingsText({
+        id: "pattern-effect-swell-rate",
+        label: "Rate (s)",
+        value: swell.rate,
+        onChange: (input) => updateTrackSwell(getSelectedEffectSettingsState().trackIndex, {
+          rate: sanitizeFloatField(input, getTrackSwell(getSelectedEffectSettingsState().trackIndex).rate),
+        }),
+      }),
+      createEffectSettingsSlider({
+        id: "pattern-effect-swell-amount",
+        label: "Amount (%)",
+        min: 0,
+        max: 100,
+        value: Math.round(swell.amount),
+        valueText: `${Math.round(swell.amount)}%`,
+        onInput: (input) => updateTrackSwell(getSelectedEffectSettingsState().trackIndex, { amount: Number(input.value) }),
+      }),
+    );
+  }
+}
+
+function syncPatternEffectSettingsPanel() {
+  if (!ui.patternEffectSettingsBody) return;
+  const selection = getSelectedEffectSettingsState();
+  const track = state.tracks[selection.trackIndex] ?? getSelectedTrack();
+  const effect = getTrackEffectContainer(track)[selection.effectKey];
+  const label = EFFECT_LABELS[selection.effectKey] ?? selection.effectKey;
+
+  if (ui.patternEffectSettingsTitle) {
+    ui.patternEffectSettingsTitle.textContent = `${label} Settings`;
+  }
+  if (ui.patternEffectSettingsTrack) {
+    ui.patternEffectSettingsTrack.textContent = `${track.name} • Pattern ${track.activePatternIndex + 1} • ${effect.enabled ? "Enabled" : "Off"}`;
+  }
+
+  if (ui.patternEffectSettingsBody.dataset.effectKey !== selection.effectKey) {
+    renderPatternEffectSettingsControls(selection.effectKey);
+  }
+
+  const root = ui.patternEffectSettingsBody;
+  if (selection.effectKey === "filter") {
+    const filter = getTrackFilter(track);
+    root.querySelectorAll('input[name="pattern-effect-filter-type"]').forEach((radio) => {
+      radio.checked = radio.value === filter.type;
+    });
+    const frequency = root.querySelector("#pattern-effect-filter-frequency");
+    const frequencyValue = root.querySelector("#pattern-effect-filter-frequency-value");
+    if (frequency instanceof HTMLInputElement) frequency.value = String(Math.round(filter.frequency));
+    if (frequencyValue) frequencyValue.textContent = formatFilterFrequency(filter.frequency);
+    const q = root.querySelector("#pattern-effect-filter-q");
+    const qValue = root.querySelector("#pattern-effect-filter-q-value");
+    if (q instanceof HTMLInputElement) q.value = String(filter.q);
+    if (qValue) qValue.textContent = formatFilterQ(filter.q);
+  } else if (selection.effectKey === "delay") {
+    const delay = getTrackDelay(track);
+    [
+      ["time", delay.time, formatDelayTime(delay.time)],
+      ["feedback", delay.feedback, formatPercent(delay.feedback, 95)],
+      ["decay", delay.decay, formatPercent(delay.decay)],
+      ["tone", delay.tone, formatPercent(delay.tone)],
+      ["mix", delay.mix, formatPercent(delay.mix)],
+    ].forEach(([key, value, text]) => {
+      const input = root.querySelector(`#pattern-effect-delay-${key}`);
+      const pill = root.querySelector(`#pattern-effect-delay-${key}-value`);
+      if (input instanceof HTMLInputElement) input.value = String(value);
+      if (pill) pill.textContent = text;
+    });
+  } else if (selection.effectKey === "drift") {
+    const drift = getTrackDrift(track);
+    const rate = root.querySelector("#pattern-effect-drift-rate");
+    const amount = root.querySelector("#pattern-effect-drift-amount");
+    const amountValue = root.querySelector("#pattern-effect-drift-amount-value");
+    if (rate instanceof HTMLInputElement) rate.value = String(drift.rate);
+    if (amount instanceof HTMLInputElement) amount.value = String(Math.round(drift.amount));
+    if (amountValue) amountValue.textContent = `${Math.round(drift.amount)}%`;
+  } else if (selection.effectKey === "swell") {
+    const swell = getTrackSwell(track);
+    const rate = root.querySelector("#pattern-effect-swell-rate");
+    const amount = root.querySelector("#pattern-effect-swell-amount");
+    const amountValue = root.querySelector("#pattern-effect-swell-amount-value");
+    if (rate instanceof HTMLInputElement) rate.value = String(swell.rate);
+    if (amount instanceof HTMLInputElement) amount.value = String(Math.round(swell.amount));
+    if (amountValue) amountValue.textContent = `${Math.round(swell.amount)}%`;
+  }
+
+  refreshRangeFills(root);
 }
 
 function getTrackBusPattern(track) {
@@ -5692,20 +5993,12 @@ function renderEffectsMatrix() {
   EFFECT_KEYS.forEach((effectKey) => {
     const headerCell = document.createElement("div");
     headerCell.className = "effects-axis-label effects-track-head";
-    headerCell.textContent =
-      effectKey === "filter"
-        ? "Filter"
-        : effectKey === "delay"
-          ? "Delay"
-          : effectKey === "drift"
-            ? "Drift"
-            : effectKey === "swell"
-              ? "Swell"
-              : effectKey;
+    headerCell.textContent = EFFECT_LABELS[effectKey] ?? effectKey;
     headerRow.append(headerCell);
   });
   ui.effectsMatrix.append(headerRow);
 
+  const selectedEffectSettings = getSelectedEffectSettingsState();
   state.tracks.forEach((track, trackIndex) => {
     const activePattern = getTrackPattern(track);
     const row = document.createElement("div");
@@ -5720,7 +6013,8 @@ function renderEffectsMatrix() {
     EFFECT_KEYS.forEach((effectKey) => {
       const effect = getTrackEffectContainer(track)[effectKey];
       const button = document.createElement("button");
-      button.className = `effects-cell effects-toggle${effect.enabled ? " active" : ""}${trackIndex === state.selectedTrackIndex ? " selected" : ""}`;
+      const isSelectedEffect = selectedEffectSettings.trackIndex === trackIndex && selectedEffectSettings.effectKey === effectKey;
+      button.className = `effects-cell effects-toggle${effect.enabled ? " active" : ""}${trackIndex === state.selectedTrackIndex ? " selected" : ""}${isSelectedEffect ? " settings-selected" : ""}`;
       applyTrackColor(button, track.color);
       button.textContent = effect.enabled
         ? (
@@ -5735,14 +6029,9 @@ function renderEffectsMatrix() {
         : "Off";
       button.title = `${track.name} Pattern ${track.activePatternIndex + 1} ${effectKey} ${effect.enabled ? "enabled" : "disabled"}`;
 
-      let holdTimer = null;
-      let holdTriggered = false;
-
       button.addEventListener("click", () => {
-        if (holdTriggered) {
-          holdTriggered = false;
-          return;
-        }
+        state.selectedTrackIndex = trackIndex;
+        state.selectedEffectSettings = { trackIndex, effectKey };
         const activePattern = getTrackPattern(track);
         activePattern.effects[effectKey].enabled = !activePattern.effects[effectKey].enabled;
         state.playback?.updateTrackBus(trackIndex, track);
@@ -5750,31 +6039,6 @@ function renderEffectsMatrix() {
         renderEffectsMatrix();
         writeStoredSession();
       });
-
-      button.addEventListener("pointerdown", () => {
-        holdTriggered = false;
-        button.classList.add("is-armed");
-        holdTimer = window.setTimeout(() => {
-          holdTriggered = true;
-          button.classList.remove("is-armed");
-          if (effectKey === "filter") openFilterOverlay(trackIndex);
-          if (effectKey === "delay") openDelayOverlay(trackIndex);
-          if (effectKey === "drift") openDriftOverlay(trackIndex);
-          if (effectKey === "swell") openSwellOverlay(trackIndex);
-        }, 1000);
-      });
-
-      const cancelHold = () => {
-        if (holdTimer) {
-          window.clearTimeout(holdTimer);
-          holdTimer = null;
-        }
-        button.classList.remove("is-armed");
-      };
-
-      button.addEventListener("pointerup", cancelHold);
-      button.addEventListener("pointerleave", cancelHold);
-      button.addEventListener("pointercancel", cancelHold);
       row.append(button);
     });
 
@@ -6387,6 +6651,7 @@ function syncUi() {
   syncDelayOverlay();
   syncDriftOverlay();
   syncSwellOverlay();
+  syncPatternEffectSettingsPanel();
   syncSequencerActions();
   ui.regionStart.value = String(Math.round(state.sample.regionStart * 1000));
   ui.regionEnd.value = String(Math.round(state.sample.regionEnd * 1000));

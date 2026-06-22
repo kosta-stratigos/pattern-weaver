@@ -638,7 +638,21 @@
             </section>
 
             <section class="workspace-panel workspace-panel-track-effects" data-workspace-panel="track-effects">
-              <div id="effects-matrix" class="effects-matrix"></div>
+              <div class="pattern-effects-layout">
+                <section class="control-group nested-control-group pattern-effects-matrix-panel" aria-labelledby="pattern-effects-matrix-title">
+                  <div class="control-group-head">
+                    <h3 id="pattern-effects-matrix-title">Effects</h3>
+                  </div>
+                  <div id="effects-matrix" class="effects-matrix"></div>
+                </section>
+                <section class="control-group nested-control-group pattern-effect-settings-panel" aria-labelledby="pattern-effect-settings-title">
+                  <div class="control-group-head">
+                    <h3 id="pattern-effect-settings-title">Filter</h3>
+                    <p id="pattern-effect-settings-track" class="effect-settings-context">Track 1 • Pattern 1</p>
+                  </div>
+                  <div id="pattern-effect-settings-body" class="control-stack pattern-effect-settings-body"></div>
+                </section>
+              </div>
             </section>
 
             <section class="workspace-panel workspace-panel-pattern-switcher" data-workspace-panel="pattern-switcher">
