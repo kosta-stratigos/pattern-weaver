@@ -2246,6 +2246,50 @@ function transposeSequencerNotes(mode = state.transposeOverlay.mode, amount = st
   closeTransposeOverlay();
 }
 
+function getSelectedPitchAssignmentTargets() {
+  pruneSelectedSteps();
+  if (!state.selectedStepKeys.size) return [];
+  return Array.from(state.selectedStepKeys)
+    .map(parseStepSelectionKey)
+    .filter(Boolean)
+    .filter(({ trackIndex, cellIndex }) => {
+      const track = state.tracks[trackIndex];
+      const pattern = track ? getTrackPattern(track) : null;
+      return Boolean(pattern?.pattern?.[cellIndex]) && cellIndex < getTrackVisibleCellCount(track, pattern);
+    });
+}
+
+function assignPitchToSelectedSteps(midiNote) {
+  const pitch = clampMidiNote(midiNote, PITCH_LANE_REFERENCE_MIDI);
+  const targets = getSelectedPitchAssignmentTargets();
+  if (!targets.length) {
+    if (state.selectedStepKeys.size) {
+      setDiagnostics("activate selected steps before assigning pitch.", "warn");
+      syncSequencerActions();
+    }
+    return false;
+  }
+
+  const changedTrackIndexes = new Set();
+  targets.forEach(({ trackIndex, cellIndex }) => {
+    const track = state.tracks[trackIndex];
+    const activePattern = track ? getTrackPattern(track) : null;
+    if (!track || !activePattern?.pattern?.[cellIndex]) return;
+    activePattern.stepPitches[cellIndex] = pitch;
+    changedTrackIndexes.add(trackIndex);
+  });
+
+  changedTrackIndexes.forEach((trackIndex) => {
+    const track = state.tracks[trackIndex];
+    if (!track) return;
+    state.chopPlayheadPositions[track.voiceIndex] = null;
+    state.playback?.updateTrackBus(trackIndex, track);
+  });
+
+  setDiagnostics(`${targets.length} selected note${targets.length === 1 ? "" : "s"} assigned to ${formatMidiNote(pitch)}.`, "ok");
+  return true;
+}
+
 function getSelectedTrack() {
   return state.tracks[state.selectedTrackIndex];
 }
@@ -4199,6 +4243,7 @@ function renderPitchLanes() {
       key.title = `${NOTE_NAMES[getMidiPitchClass(midiNote)]}${Math.floor(midiNote / 12) - 1}`;
       key.addEventListener("click", () => {
         state.selectedTrackIndex = index;
+        assignPitchToSelectedSteps(midiNote);
         syncUi();
         renderTrackSelector();
         renderEffectsMatrix();
