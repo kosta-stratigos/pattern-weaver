@@ -2299,15 +2299,15 @@ function shiftPatternPitchFillRange(pattern, semitoneOffset) {
   }, currentFill);
 }
 
-function getPitchFromRangeForFillType(fillType, range, stepIndex) {
-  if (!range.length) return PITCH_LANE_REFERENCE_MIDI;
+function getPitchFromNotesForFillType(fillType, notes, stepIndex) {
+  if (!notes.length) return PITCH_LANE_REFERENCE_MIDI;
   if (fillType === "falling") {
-    return range[(range.length - 1) - (stepIndex % range.length)];
+    return notes[(notes.length - 1) - (stepIndex % notes.length)];
   }
   if (fillType === "random-once" || fillType === "random-every") {
-    return range[Math.floor(Math.random() * range.length)];
+    return notes[Math.floor(Math.random() * notes.length)];
   }
-  return range[stepIndex % range.length];
+  return notes[stepIndex % notes.length];
 }
 
 function applyPitchRangeToTrackTargets(trackIndex, targets, range) {
@@ -2315,11 +2315,12 @@ function applyPitchRangeToTrackTargets(trackIndex, targets, range) {
   const activePattern = track ? getTrackPattern(track) : null;
   if (!track || !activePattern || !targets.length) return false;
   const fill = setPatternPitchFillRange(activePattern, range[0], range[range.length - 1]);
+  const fillNotes = getTrackPitchFillNotes(track, activePattern);
   targets
     .slice()
     .sort((a, b) => a.cellIndex - b.cellIndex)
     .forEach(({ cellIndex }, targetIndex) => {
-      activePattern.stepPitches[cellIndex] = getPitchFromRangeForFillType(fill.type, range, targetIndex);
+      activePattern.stepPitches[cellIndex] = getPitchFromNotesForFillType(fill.type, fillNotes, targetIndex);
     });
   return true;
 }
