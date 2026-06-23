@@ -409,6 +409,15 @@ h2 {
   background: linear-gradient(180deg, var(--track-color), rgba(4, 11, 10, 0.9));
 }
 
+.pitch-key.is-range-anchor {
+  outline: 2px solid rgba(255, 175, 95, 0.95);
+  outline-offset: 1px;
+  box-shadow:
+    0 0 0 1px rgba(4, 17, 15, 0.85),
+    0 0 12px rgba(255, 175, 95, 0.32);
+  opacity: 1;
+}
+
 .pitch-scale-select {
   min-height: 40px;
 }

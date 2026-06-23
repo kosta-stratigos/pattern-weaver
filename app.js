@@ -1902,6 +1902,7 @@ const state = {
     effectKey: "filter",
   },
   selectedStepKeys: new Set(),
+  pitchRangeAnchorMidi: null,
   copiedTrackPattern: null,
   currentTransportStep: -1,
   currentSampleName: "",
@@ -2226,10 +2227,19 @@ function transposeSequencerNotes(mode = state.transposeOverlay.mode, amount = st
   }
 
   const changedTrackIndexes = new Set();
+  const shiftedRandomEveryTrackIndexes = new Set();
   targets.forEach(({ trackIndex, cellIndex }) => {
     const track = state.tracks[trackIndex];
     const activePattern = track ? getTrackPattern(track) : null;
     if (!track || !activePattern?.pattern?.[cellIndex]) return;
+    if (activePattern.pitchFill?.type === "random-every") {
+      if (!shiftedRandomEveryTrackIndexes.has(trackIndex)) {
+        shiftPatternPitchFillRange(activePattern, semitoneOffset);
+        shiftedRandomEveryTrackIndexes.add(trackIndex);
+        changedTrackIndexes.add(trackIndex);
+      }
+      return;
+    }
     const rawPitch = activePattern.stepPitches[cellIndex] ?? getTrackPitchMidi(track);
     activePattern.stepPitches[cellIndex] = clampMidiNote(rawPitch + semitoneOffset, rawPitch);
     changedTrackIndexes.add(trackIndex);
@@ -2259,24 +2269,81 @@ function getSelectedPitchAssignmentTargets() {
     });
 }
 
-function assignPitchToSelectedSteps(midiNote) {
-  const pitch = clampMidiNote(midiNote, PITCH_LANE_REFERENCE_MIDI);
+function getChromaticPitchRange(fromMidi, toMidi) {
+  const rangeStart = clampMidiNote(Math.min(fromMidi, toMidi), PITCH_LANE_REFERENCE_MIDI);
+  const rangeEnd = clampMidiNote(Math.max(fromMidi, toMidi), PITCH_LANE_REFERENCE_MIDI);
+  return Array.from({ length: rangeEnd - rangeStart + 1 }, (_, index) => rangeStart + index);
+}
+
+function setPatternPitchFillRange(pattern, fromMidi, toMidi) {
+  if (!pattern) return createDefaultPitchFillSettings();
+  const range = getChromaticPitchRange(fromMidi, toMidi);
+  const currentFill = normalizePitchFillSettings(pattern.pitchFill);
+  const nextType = currentFill.type === "single" && range.length > 1 ? "rising" : currentFill.type;
+  pattern.pitchFill = normalizePitchFillSettings({
+    ...currentFill,
+    type: nextType,
+    from: range[0],
+    to: range[range.length - 1],
+  }, currentFill);
+  return pattern.pitchFill;
+}
+
+function shiftPatternPitchFillRange(pattern, semitoneOffset) {
+  if (!pattern) return;
+  const currentFill = normalizePitchFillSettings(pattern.pitchFill);
+  pattern.pitchFill = normalizePitchFillSettings({
+    ...currentFill,
+    from: clampMidiNote(currentFill.from + semitoneOffset, currentFill.from),
+    to: clampMidiNote(currentFill.to + semitoneOffset, currentFill.to),
+  }, currentFill);
+}
+
+function getPitchFromRangeForFillType(fillType, range, stepIndex) {
+  if (!range.length) return PITCH_LANE_REFERENCE_MIDI;
+  if (fillType === "falling") {
+    return range[(range.length - 1) - (stepIndex % range.length)];
+  }
+  if (fillType === "random-once" || fillType === "random-every") {
+    return range[Math.floor(Math.random() * range.length)];
+  }
+  return range[stepIndex % range.length];
+}
+
+function applyPitchRangeToTrackTargets(trackIndex, targets, range) {
+  const track = state.tracks[trackIndex];
+  const activePattern = track ? getTrackPattern(track) : null;
+  if (!track || !activePattern || !targets.length) return false;
+  const fill = setPatternPitchFillRange(activePattern, range[0], range[range.length - 1]);
+  targets
+    .slice()
+    .sort((a, b) => a.cellIndex - b.cellIndex)
+    .forEach(({ cellIndex }, targetIndex) => {
+      activePattern.stepPitches[cellIndex] = getPitchFromRangeForFillType(fill.type, range, targetIndex);
+    });
+  return true;
+}
+
+function assignPitchRangeToSelectedSteps(fromMidi, toMidi, { warnIfNoSelection = false } = {}) {
+  const range = getChromaticPitchRange(fromMidi, toMidi);
   const targets = getSelectedPitchAssignmentTargets();
   if (!targets.length) {
-    if (state.selectedStepKeys.size) {
-      setDiagnostics("activate selected steps before assigning pitch.", "warn");
+    if (state.selectedStepKeys.size || warnIfNoSelection) {
+      setDiagnostics("select active steps before assigning pitch.", "warn");
       syncSequencerActions();
     }
     return false;
   }
 
+  const targetsByTrack = new Map();
+  targets.forEach((target) => {
+    if (!targetsByTrack.has(target.trackIndex)) targetsByTrack.set(target.trackIndex, []);
+    targetsByTrack.get(target.trackIndex).push(target);
+  });
+
   const changedTrackIndexes = new Set();
-  targets.forEach(({ trackIndex, cellIndex }) => {
-    const track = state.tracks[trackIndex];
-    const activePattern = track ? getTrackPattern(track) : null;
-    if (!track || !activePattern?.pattern?.[cellIndex]) return;
-    activePattern.stepPitches[cellIndex] = pitch;
-    changedTrackIndexes.add(trackIndex);
+  targetsByTrack.forEach((trackTargets, trackIndex) => {
+    if (applyPitchRangeToTrackTargets(trackIndex, trackTargets, range)) changedTrackIndexes.add(trackIndex);
   });
 
   changedTrackIndexes.forEach((trackIndex) => {
@@ -2286,8 +2353,30 @@ function assignPitchToSelectedSteps(midiNote) {
     state.playback?.updateTrackBus(trackIndex, track);
   });
 
-  setDiagnostics(`${targets.length} selected note${targets.length === 1 ? "" : "s"} assigned to ${formatMidiNote(pitch)}.`, "ok");
+  const rangeLabel = range.length === 1 ? formatMidiNote(range[0]) : `${formatMidiNote(range[0])}-${formatMidiNote(range[range.length - 1])}`;
+  setDiagnostics(`${targets.length} selected note${targets.length === 1 ? "" : "s"} assigned to ${rangeLabel}.`, "ok");
   return true;
+}
+
+function assignPitchToSelectedSteps(midiNote) {
+  return assignPitchRangeToSelectedSteps(midiNote, midiNote);
+}
+
+function handlePitchKeyClick(trackIndex, midiNote, event) {
+  state.selectedTrackIndex = trackIndex;
+  const pitch = clampMidiNote(midiNote, PITCH_LANE_REFERENCE_MIDI);
+  if (event.shiftKey) {
+    if (state.pitchRangeAnchorMidi == null) {
+      state.pitchRangeAnchorMidi = pitch;
+      setDiagnostics(`range start set to ${formatMidiNote(pitch)}. Shift-click another pitch to apply.`, "ok");
+      return false;
+    }
+    const rangeStart = state.pitchRangeAnchorMidi;
+    state.pitchRangeAnchorMidi = null;
+    return assignPitchRangeToSelectedSteps(rangeStart, pitch, { warnIfNoSelection: true });
+  }
+  state.pitchRangeAnchorMidi = null;
+  return assignPitchToSelectedSteps(pitch);
 }
 
 function getSelectedTrack() {
@@ -4238,12 +4327,14 @@ function renderPitchLanes() {
       if (activeMidi !== null && midiNote === activeMidi) {
         key.classList.add("is-active");
       }
+      if (state.pitchRangeAnchorMidi === midiNote) {
+        key.classList.add("is-range-anchor");
+      }
       key.dataset.trackIndex = String(index);
       key.dataset.midiNote = String(midiNote);
       key.title = `${NOTE_NAMES[getMidiPitchClass(midiNote)]}${Math.floor(midiNote / 12) - 1}`;
-      key.addEventListener("click", () => {
-        state.selectedTrackIndex = index;
-        assignPitchToSelectedSteps(midiNote);
+      key.addEventListener("click", (event) => {
+        handlePitchKeyClick(index, midiNote, event);
         syncUi();
         renderTrackSelector();
         renderEffectsMatrix();
