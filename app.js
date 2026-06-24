@@ -121,6 +121,10 @@ const ui = {
   patternEffectSettingsTitle: document.querySelector("#pattern-effect-settings-title"),
   patternEffectSettingsTrack: document.querySelector("#pattern-effect-settings-track"),
   patternEffectSettingsBody: document.querySelector("#pattern-effect-settings-body"),
+  momentaryEffectsMatrix: document.querySelector("#momentary-effects-matrix"),
+  momentaryEffectSettingsTitle: document.querySelector("#momentary-effect-settings-title"),
+  momentaryEffectSettingsTrack: document.querySelector("#momentary-effect-settings-track"),
+  momentaryEffectSettingsBody: document.querySelector("#momentary-effect-settings-body"),
   filterOverlay: document.querySelector("#filter-overlay"),
   filterOverlayTrack: document.querySelector("#filter-overlay-track"),
   filterOverlayClose: document.querySelector("#filter-overlay-close"),
@@ -251,6 +255,19 @@ const EFFECT_LABELS = {
   drift: "Drift",
   swell: "Swell",
 };
+const MOMENTARY_EFFECT_KEYS = ["crackle", "stutter", "speed", "glitch"];
+const MOMENTARY_EFFECT_LABELS = {
+  crackle: "Crackle",
+  stutter: "Stutter",
+  speed: "Speed",
+  glitch: "Glitch",
+};
+const MOMENTARY_EFFECT_HOTKEYS = {
+  crackle: "q",
+  stutter: "w",
+  speed: "e",
+  glitch: "r",
+};
 const FILTER_TYPES = ["lowpass", "bandpass", "highpass"];
 const TRACK_PLAYBACK_MODES = ["forward", "ping-pong", "random", "reverse"];
 const PATTERN_SWITCH_MODES = ["instant", "on-one"];
@@ -365,6 +382,21 @@ function clampModulationAmount(value, fallback = 0) {
   return Math.max(0, Math.min(100, resolved));
 }
 
+function clampMomentarySpeedHz(value, fallback = 8) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(0.5, Math.min(40, resolved));
+}
+
+function clampMomentaryMs(value, min, max, fallback) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(min, Math.min(max, resolved));
+}
+
+function clampMomentarySemitones(value, fallback = 12) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(0, Math.min(24, Math.round(resolved)));
+}
+
 function clampMidiNote(value, fallback = SYNTH_TUNE_DEFAULT_MIDI) {
   return Math.max(24, Math.min(84, clampIntegerText(value, fallback)));
 }
@@ -445,6 +477,44 @@ function createDefaultSwellSettings() {
     enabled: false,
     rate: 1.8,
     amount: 18,
+  };
+}
+
+function createDefaultMomentaryEffectSettings() {
+  return {
+    crackle: {
+      speed: 14,
+      density: 42,
+      depth: 78,
+    },
+    stutter: {
+      attack: 8,
+      release: 46,
+      length: 52,
+      cycleSpeed: 12,
+    },
+    speed: {
+      direction: "up",
+      range: 12,
+      amount: 75,
+      easing: 50,
+    },
+    glitch: {
+      speed: 7,
+      pitch: 35,
+      volume: 55,
+      filter: 48,
+      pan: 60,
+      glide: 0,
+    },
+  };
+}
+
+function createDefaultMomentaryEffectsState() {
+  return {
+    armed: Array.from({ length: TRACK_COUNT }, () => Object.fromEntries(MOMENTARY_EFFECT_KEYS.map((key) => [key, false]))),
+    settings: Array.from({ length: TRACK_COUNT }, () => createDefaultMomentaryEffectSettings()),
+    active: Object.fromEntries(MOMENTARY_EFFECT_KEYS.map((key) => [key, false])),
   };
 }
 
@@ -622,6 +692,50 @@ function normalizeSwellSettings(source = {}, fallback = createDefaultSwellSettin
     enabled: Boolean(source.enabled),
     rate: clampLfoRateSeconds(source.rate ?? fallback.rate, fallback.rate),
     amount: clampModulationAmount(legacyAmount, fallbackAmount),
+  };
+}
+
+function normalizeMomentaryEffectSettings(source = {}, fallback = createDefaultMomentaryEffectSettings()) {
+  return {
+    crackle: {
+      speed: clampMomentarySpeedHz(source.crackle?.speed ?? fallback.crackle.speed, fallback.crackle.speed),
+      density: clampUnitPercent(source.crackle?.density ?? fallback.crackle.density, fallback.crackle.density),
+      depth: clampUnitPercent(source.crackle?.depth ?? fallback.crackle.depth, fallback.crackle.depth),
+    },
+    stutter: {
+      attack: clampMomentaryMs(source.stutter?.attack ?? fallback.stutter.attack, 0, 200, fallback.stutter.attack),
+      release: clampMomentaryMs(source.stutter?.release ?? fallback.stutter.release, 0, 400, fallback.stutter.release),
+      length: clampUnitPercent(source.stutter?.length ?? fallback.stutter.length, fallback.stutter.length),
+      cycleSpeed: clampMomentarySpeedHz(source.stutter?.cycleSpeed ?? fallback.stutter.cycleSpeed, fallback.stutter.cycleSpeed),
+    },
+    speed: {
+      direction: source.speed?.direction === "down" ? "down" : "up",
+      range: clampMomentarySemitones(source.speed?.range ?? fallback.speed.range, fallback.speed.range),
+      amount: clampUnitPercent(source.speed?.amount ?? fallback.speed.amount, fallback.speed.amount),
+      easing: clampUnitPercent(source.speed?.easing ?? fallback.speed.easing, fallback.speed.easing),
+    },
+    glitch: {
+      speed: clampMomentarySpeedHz(source.glitch?.speed ?? fallback.glitch.speed, fallback.glitch.speed),
+      pitch: clampUnitPercent(source.glitch?.pitch ?? fallback.glitch.pitch, fallback.glitch.pitch),
+      volume: clampUnitPercent(source.glitch?.volume ?? fallback.glitch.volume, fallback.glitch.volume),
+      filter: clampUnitPercent(source.glitch?.filter ?? fallback.glitch.filter, fallback.glitch.filter),
+      pan: clampUnitPercent(source.glitch?.pan ?? fallback.glitch.pan, fallback.glitch.pan),
+      glide: clampUnitPercent(source.glitch?.glide ?? fallback.glitch.glide, fallback.glitch.glide),
+    },
+  };
+}
+
+function normalizeMomentaryEffectsState(source = {}, fallback = createDefaultMomentaryEffectsState()) {
+  return {
+    armed: Array.from({ length: TRACK_COUNT }, (_, trackIndex) => {
+      const sourceRow = source.armed?.[trackIndex] ?? {};
+      const fallbackRow = fallback.armed?.[trackIndex] ?? {};
+      return Object.fromEntries(MOMENTARY_EFFECT_KEYS.map((key) => [key, Boolean(sourceRow[key] ?? fallbackRow[key])]));
+    }),
+    settings: Array.from({ length: TRACK_COUNT }, (_, trackIndex) => {
+      return normalizeMomentaryEffectSettings(source.settings?.[trackIndex], fallback.settings?.[trackIndex]);
+    }),
+    active: Object.fromEntries(MOMENTARY_EFFECT_KEYS.map((key) => [key, false])),
   };
 }
 
@@ -974,20 +1088,49 @@ class PlaybackLayer {
     const gainCenter = this.audioContext.createConstantSource();
     const gainLfo = this.audioContext.createOscillator();
     const gainLfoDepth = this.audioContext.createGain();
+    const momentaryInput = this.audioContext.createGain();
+    const stutterDryGain = this.audioContext.createGain();
+    const stutterSend = this.audioContext.createGain();
+    const stutterDelay = this.audioContext.createDelay(0.5);
+    const stutterFeedbackGain = this.audioContext.createGain();
+    const stutterWetGain = this.audioContext.createGain();
+    const momentaryGain = this.audioContext.createGain();
+    const momentaryFilter = this.audioContext.createBiquadFilter();
+    const momentaryPanOffset = this.audioContext.createConstantSource();
 
     outputGain.connect(panNode);
     panNode.connect(this.output);
     delayTone.type = "lowpass";
+    momentaryFilter.type = "lowpass";
+    momentaryFilter.frequency.value = 16000;
+    momentaryFilter.Q.value = 0.7;
+    stutterDryGain.gain.value = 1;
+    stutterSend.gain.value = 0;
+    stutterFeedbackGain.gain.value = 0;
+    stutterWetGain.gain.value = 0;
+    momentaryGain.gain.value = 1;
     panLfo.type = "sine";
     gainLfo.type = "sine";
     panCenter.connect(panNode.pan);
     panLfo.connect(panLfoDepth);
     panLfoDepth.connect(panNode.pan);
+    momentaryPanOffset.connect(panNode.pan);
     gainCenter.connect(outputGain.gain);
     gainLfo.connect(gainLfoDepth);
     gainLfoDepth.connect(outputGain.gain);
+    momentaryInput.connect(stutterDryGain);
+    stutterDryGain.connect(momentaryGain);
+    momentaryInput.connect(stutterSend);
+    stutterSend.connect(stutterDelay);
+    stutterDelay.connect(stutterWetGain);
+    stutterWetGain.connect(momentaryGain);
+    stutterDelay.connect(stutterFeedbackGain);
+    stutterFeedbackGain.connect(stutterDelay);
+    momentaryGain.connect(momentaryFilter);
+    momentaryFilter.connect(outputGain);
     panCenter.start();
     panLfo.start();
+    momentaryPanOffset.start();
     gainCenter.start();
     gainLfo.start();
 
@@ -1009,6 +1152,26 @@ class PlaybackLayer {
       gainCenter,
       gainLfo,
       gainLfoDepth,
+      momentaryInput,
+      stutterDryGain,
+      stutterSend,
+      stutterDelay,
+      stutterFeedbackGain,
+      stutterWetGain,
+      momentaryGain,
+      momentaryFilter,
+      momentaryPanOffset,
+      momentaryLoopId: null,
+      momentaryRuntime: {
+        crackleGain: 1,
+        crackleNextTime: 0,
+        stutterPhaseStart: this.audioContext.currentTime,
+        glitchVolume: 1,
+        glitchPitchRatio: 1,
+        glitchPan: 0,
+        glitchNextTime: 0,
+      },
+      activeVoices: new Set(),
     };
     return bus;
   }
@@ -1016,7 +1179,7 @@ class PlaybackLayer {
   updateTrackBus(trackIndex, track = this.state.tracks[trackIndex], effectPattern = getTrackBusPattern(track)) {
     const bus = this.trackBuses?.[trackIndex];
     if (!bus || !track) return;
-    const { input, filterNode, dryGain, delaySend, delayNode, delayTone, delayWetGain, feedbackGain, outputGain, panNode, panCenter, panLfo, panLfoDepth, gainCenter, gainLfo, gainLfoDepth } = bus;
+    const { input, filterNode, dryGain, delaySend, delayNode, delayTone, delayWetGain, feedbackGain, momentaryInput, outputGain, panNode, panCenter, panLfo, panLfoDepth, gainCenter, gainLfo, gainLfoDepth } = bus;
 
     input.disconnect();
     filterNode.disconnect();
@@ -1058,7 +1221,8 @@ class PlaybackLayer {
     }
 
     if (!delay.enabled) {
-      sourceStage.connect(outputGain);
+      sourceStage.connect(momentaryInput);
+      this.updateMomentaryTrackBus(trackIndex);
       return;
     }
 
@@ -1079,14 +1243,188 @@ class PlaybackLayer {
     feedbackGain.gain.setValueAtTime(feedbackLoopGain, this.audioContext.currentTime);
 
     sourceStage.connect(dryGain);
-    dryGain.connect(outputGain);
+    dryGain.connect(momentaryInput);
     sourceStage.connect(delaySend);
     delaySend.connect(delayNode);
     delayNode.connect(delayTone);
     delayTone.connect(delayWetGain);
-    delayWetGain.connect(outputGain);
+    delayWetGain.connect(momentaryInput);
     delayTone.connect(feedbackGain);
     feedbackGain.connect(delayNode);
+    this.updateMomentaryTrackBus(trackIndex);
+  }
+
+  getMomentarySpeedRampSeconds(trackIndex, active) {
+    const speed = getMomentaryEffectSettings(trackIndex, "speed");
+    const easing = clampUnitPercent(speed.easing, 50) / 100;
+    const slow = 0.48;
+    const fast = 0.018;
+    if (active) return fast + (1 - easing) * (slow - fast);
+    return fast + easing * (slow - fast);
+  }
+
+  getMomentarySpeedRatio(trackIndex) {
+    if (!isMomentaryEffectPerforming(trackIndex, "speed")) return 1;
+    const speed = getMomentaryEffectSettings(trackIndex, "speed");
+    const direction = speed.direction === "down" ? -1 : 1;
+    const semitones = direction * clampMomentarySemitones(speed.range, 12) * (clampUnitPercent(speed.amount, 75) / 100);
+    return 2 ** (semitones / 12);
+  }
+
+  getMomentaryPitchRatio(trackIndex) {
+    const bus = this.trackBuses?.[trackIndex];
+    const glitchRatio = bus?.momentaryRuntime?.glitchPitchRatio ?? 1;
+    return this.getMomentarySpeedRatio(trackIndex) * glitchRatio;
+  }
+
+  setMomentaryAudioParam(param, value, when = this.audioContext.currentTime, glideSeconds = 0) {
+    const glide = Math.max(0, Number(glideSeconds) || 0);
+    param.cancelScheduledValues(when);
+    if (glide <= 0.001) {
+      param.setValueAtTime(value, when);
+      return;
+    }
+    param.setTargetAtTime(value, when, glide);
+  }
+
+  getGlitchGlideSeconds(trackIndex) {
+    const glitch = getMomentaryEffectSettings(trackIndex, "glitch");
+    return (clampUnitPercent(glitch.glide, 0) / 100) * 0.18;
+  }
+
+  applyMomentaryPitchForTrack(trackIndex, rampSeconds = 0.025) {
+    const bus = this.trackBuses?.[trackIndex];
+    if (!bus) return;
+    const ratio = this.getMomentaryPitchRatio(trackIndex);
+    bus.activeVoices?.forEach((handle) => handle.setPitchRatio?.(ratio, rampSeconds));
+  }
+
+  registerActiveVoice(trackIndex, handle) {
+    const bus = this.trackBuses?.[trackIndex];
+    if (!bus || !handle) return handle;
+    bus.activeVoices.add(handle);
+    handle.setPitchRatio?.(this.getMomentaryPitchRatio(trackIndex), 0.01);
+    return handle;
+  }
+
+  unregisterActiveVoice(trackIndex, handle) {
+    const bus = this.trackBuses?.[trackIndex];
+    bus?.activeVoices?.delete(handle);
+  }
+
+  updateMomentaryTrackBus(trackIndex) {
+    const bus = this.trackBuses?.[trackIndex];
+    if (!bus) return;
+    const now = this.audioContext.currentTime;
+    const stutterActive = isMomentaryEffectPerforming(trackIndex, "stutter");
+    const anyVolumeMod = isMomentaryEffectPerforming(trackIndex, "crackle") || stutterActive || isMomentaryEffectPerforming(trackIndex, "glitch");
+
+    if (stutterActive) {
+      const stutter = getMomentaryEffectSettings(trackIndex, "stutter");
+      const cycleSeconds = 1 / clampMomentarySpeedHz(stutter.cycleSpeed, 12);
+      const delaySeconds = Math.max(0.012, Math.min(0.18, cycleSeconds * (0.2 + (clampUnitPercent(stutter.length, 52) / 100) * 0.6)));
+      bus.stutterDelay.delayTime.setTargetAtTime(delaySeconds, now, 0.01);
+      bus.stutterDryGain.gain.setTargetAtTime(0.08, now, 0.012);
+      bus.stutterSend.gain.setTargetAtTime(1, now, 0.012);
+      bus.stutterWetGain.gain.setTargetAtTime(0.9, now, 0.012);
+      bus.stutterFeedbackGain.gain.setTargetAtTime(0.78, now, 0.012);
+    } else {
+      bus.stutterDryGain.gain.setTargetAtTime(1, now, 0.012);
+      bus.stutterSend.gain.setTargetAtTime(0, now, 0.012);
+      bus.stutterWetGain.gain.setTargetAtTime(0, now, 0.012);
+      bus.stutterFeedbackGain.gain.setTargetAtTime(0, now, 0.012);
+    }
+
+    if (anyVolumeMod && !bus.momentaryLoopId) {
+      bus.momentaryRuntime.crackleNextTime = 0;
+      bus.momentaryRuntime.glitchNextTime = 0;
+      bus.momentaryRuntime.stutterPhaseStart = now;
+      bus.momentaryLoopId = window.setInterval(() => this.tickMomentaryTrackBus(trackIndex), 24);
+    } else if (!anyVolumeMod && bus.momentaryLoopId) {
+      window.clearInterval(bus.momentaryLoopId);
+      bus.momentaryLoopId = null;
+      bus.momentaryRuntime.crackleGain = 1;
+      bus.momentaryRuntime.glitchVolume = 1;
+      bus.momentaryRuntime.glitchPitchRatio = 1;
+      bus.momentaryRuntime.glitchPan = 0;
+      this.setMomentaryAudioParam(bus.momentaryGain.gain, 1, now, 0.018);
+      this.setMomentaryAudioParam(bus.momentaryFilter.frequency, 16000, now, 0.018);
+      this.setMomentaryAudioParam(bus.momentaryFilter.Q, 0.7, now, 0.018);
+      this.setMomentaryAudioParam(bus.momentaryPanOffset.offset, 0, now, 0.018);
+      this.applyMomentaryPitchForTrack(trackIndex, 0.025);
+    }
+  }
+
+  tickMomentaryTrackBus(trackIndex) {
+    const bus = this.trackBuses?.[trackIndex];
+    if (!bus) return;
+    const now = this.audioContext.currentTime;
+    const runtime = bus.momentaryRuntime;
+
+    if (isMomentaryEffectPerforming(trackIndex, "crackle")) {
+      const crackle = getMomentaryEffectSettings(trackIndex, "crackle");
+      if (now >= runtime.crackleNextTime) {
+        const density = clampUnitPercent(crackle.density, 42) / 100;
+        const depth = clampUnitPercent(crackle.depth, 78) / 100;
+        runtime.crackleGain = Math.random() < density ? 1 - depth * (0.35 + Math.random() * 0.65) : 1;
+        runtime.crackleNextTime = now + (1 / clampMomentarySpeedHz(crackle.speed, 14));
+      }
+    } else {
+      runtime.crackleGain = 1;
+    }
+
+    let stutterGain = 1;
+    if (isMomentaryEffectPerforming(trackIndex, "stutter")) {
+      const stutter = getMomentaryEffectSettings(trackIndex, "stutter");
+      const cycleSeconds = 1 / clampMomentarySpeedHz(stutter.cycleSpeed, 12);
+      const attack = clampMomentaryMs(stutter.attack, 0, 200, 8) / 1000;
+      const release = clampMomentaryMs(stutter.release, 0, 400, 46) / 1000;
+      const hold = Math.max(0.008, cycleSeconds * (clampUnitPercent(stutter.length, 52) / 100));
+      const phase = ((now - runtime.stutterPhaseStart) % cycleSeconds + cycleSeconds) % cycleSeconds;
+      if (phase < attack && attack > 0) {
+        stutterGain = phase / attack;
+      } else if (phase < hold) {
+        stutterGain = 1;
+      } else if (phase < hold + release && release > 0) {
+        stutterGain = Math.max(0, 1 - ((phase - hold) / release));
+      } else {
+        stutterGain = 0.03;
+      }
+    }
+
+    if (isMomentaryEffectPerforming(trackIndex, "glitch")) {
+      const glitch = getMomentaryEffectSettings(trackIndex, "glitch");
+      if (now >= runtime.glitchNextTime) {
+        const glideSeconds = this.getGlitchGlideSeconds(trackIndex);
+        const volumeAmount = clampUnitPercent(glitch.volume, 55) / 100;
+        const filterAmount = clampUnitPercent(glitch.filter, 48) / 100;
+        const panAmount = clampUnitPercent(glitch.pan, 60) / 100;
+        const pitchAmount = clampUnitPercent(glitch.pitch, 35) / 100;
+        runtime.glitchVolume = 1 - volumeAmount * Math.random() * 0.9;
+        runtime.glitchPan = (Math.random() * 2 - 1) * panAmount;
+        runtime.glitchPitchRatio = 2 ** (((Math.random() * 2 - 1) * 12 * pitchAmount) / 12);
+        const filterFloor = 16000 * (1 - filterAmount) + 180 * filterAmount;
+        const filterFrequency = filterFloor + Math.random() * (16000 - filterFloor);
+        this.setMomentaryAudioParam(bus.momentaryFilter.frequency, filterFrequency, now, glideSeconds);
+        this.setMomentaryAudioParam(bus.momentaryFilter.Q, 0.7 + Math.random() * 5 * filterAmount, now, glideSeconds);
+        this.setMomentaryAudioParam(bus.momentaryPanOffset.offset, runtime.glitchPan, now, glideSeconds);
+        this.applyMomentaryPitchForTrack(trackIndex, glideSeconds);
+        runtime.glitchNextTime = now + (1 / clampMomentarySpeedHz(glitch.speed, 7));
+      }
+    } else {
+      if (runtime.glitchPitchRatio !== 1) {
+        runtime.glitchPitchRatio = 1;
+        this.applyMomentaryPitchForTrack(trackIndex, 0.025);
+      }
+      runtime.glitchVolume = 1;
+      runtime.glitchPan = 0;
+      this.setMomentaryAudioParam(bus.momentaryFilter.frequency, 16000, now, 0.018);
+      this.setMomentaryAudioParam(bus.momentaryFilter.Q, 0.7, now, 0.018);
+      this.setMomentaryAudioParam(bus.momentaryPanOffset.offset, 0, now, 0.018);
+    }
+
+    const gain = Math.max(0.0001, Math.min(1.25, runtime.crackleGain * stutterGain * runtime.glitchVolume));
+    this.setMomentaryAudioParam(bus.momentaryGain.gain, gain, now, isMomentaryEffectPerforming(trackIndex, "glitch") ? this.getGlitchGlideSeconds(trackIndex) : 0.008);
   }
 
   createVoice({
@@ -1111,7 +1449,7 @@ class PlaybackLayer {
 
     const source = this.audioContext.createBufferSource();
     source.buffer = buffer;
-    source.playbackRate.value = rate;
+    source.playbackRate.setValueAtTime(rate * this.getMomentaryPitchRatio(trackIndex), when);
 
     const safeDuration = Math.max(0.02, Math.min(duration, buffer.duration));
     const maxOffset = Math.max(0, buffer.duration - safeDuration);
@@ -1131,6 +1469,23 @@ class PlaybackLayer {
     const baseStopTime = envelopeTiming.stopTime;
     const disconnectDelayMs = Math.ceil((baseStopTime - this.audioContext.currentTime + 0.1) * 1000);
 
+    let stopped = false;
+    const handle = this.registerActiveVoice(trackIndex, {
+      setPitchRatio: (ratio, rampSeconds = 0.025) => {
+        this.setMomentaryAudioParam(source.playbackRate, rate * ratio, this.audioContext.currentTime, rampSeconds);
+      },
+      stop: (stopWhen = this.audioContext.currentTime) => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          voiceGain.gain.cancelScheduledValues(stopWhen);
+          voiceGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
+          source.stop(stopWhen + 0.05);
+        } catch {}
+        this.unregisterActiveVoice(trackIndex, handle);
+      },
+    });
+
     if (loop) {
       source.loop = true;
       const loopRegionStart = reverse ? buffer.duration - loopEnd : loopStart;
@@ -1143,19 +1498,9 @@ class PlaybackLayer {
         source.disconnect?.();
         processingNodes.disconnect();
         voiceGain.disconnect?.();
+        this.unregisterActiveVoice(trackIndex, handle);
       }, Math.max(0, disconnectDelayMs));
-      let stopped = false;
-      return {
-        stop: (stopWhen = this.audioContext.currentTime) => {
-          if (stopped) return;
-          stopped = true;
-          try {
-            voiceGain.gain.cancelScheduledValues(stopWhen);
-            voiceGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
-            source.stop(stopWhen + 0.05);
-          } catch {}
-        },
-      };
+      return handle;
     }
     source.start(when, playbackOffset, safeDuration);
     source.stop(Math.max(when + safeDuration, baseStopTime));
@@ -1163,19 +1508,9 @@ class PlaybackLayer {
       source.disconnect?.();
       processingNodes.disconnect();
       voiceGain.disconnect?.();
+      this.unregisterActiveVoice(trackIndex, handle);
     }, Math.max(0, disconnectDelayMs));
-    let stopped = false;
-    return {
-      stop: (stopWhen = this.audioContext.currentTime) => {
-        if (stopped) return;
-        stopped = true;
-        try {
-          voiceGain.gain.cancelScheduledValues(stopWhen);
-          voiceGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
-          source.stop(stopWhen + 0.05);
-        } catch {}
-      },
-    };
+    return handle;
   }
 
   createSampleProcessingNodes(processing = null) {
@@ -1416,7 +1751,7 @@ class PlaybackLayer {
 
     oscillator.type = SYNTH_WAVES.includes(settings.wave) ? settings.wave : "sine";
     if (periodicWave) oscillator.setPeriodicWave(periodicWave);
-    oscillator.frequency.setValueAtTime(frequency, when);
+    oscillator.frequency.setValueAtTime(frequency * this.getMomentaryPitchRatio(settings.trackIndex), when);
     noiseSource.buffer = this.noiseBuffer;
     noiseSource.loop = true;
 
@@ -1458,6 +1793,24 @@ class PlaybackLayer {
     oscillator.stop(stopTime);
     noiseSource.stop(stopTime);
 
+    let stopped = false;
+    const handle = this.registerActiveVoice(settings.trackIndex, {
+      setPitchRatio: (ratio, rampSeconds = 0.025) => {
+        this.setMomentaryAudioParam(oscillator.frequency, frequency * ratio, this.audioContext.currentTime, rampSeconds);
+      },
+      stop: (stopWhen = this.audioContext.currentTime) => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          ampGain.gain.cancelScheduledValues(stopWhen);
+          ampGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
+          oscillator.stop(stopWhen + 0.05);
+          noiseSource.stop(stopWhen + 0.05);
+        } catch {}
+        this.unregisterActiveVoice(settings.trackIndex, handle);
+      },
+    });
+
     const disconnectDelayMs = Math.ceil((stopTime - this.audioContext.currentTime + 0.1) * 1000);
     window.setTimeout(() => {
       oscillator.disconnect?.();
@@ -1468,20 +1821,9 @@ class PlaybackLayer {
       waveShaper.disconnect?.();
       filterNode.disconnect?.();
       ampGain.disconnect?.();
+      this.unregisterActiveVoice(settings.trackIndex, handle);
     }, Math.max(0, disconnectDelayMs));
-    let stopped = false;
-    return {
-      stop: (stopWhen = this.audioContext.currentTime) => {
-        if (stopped) return;
-        stopped = true;
-        try {
-          ampGain.gain.cancelScheduledValues(stopWhen);
-          ampGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
-          oscillator.stop(stopWhen + 0.05);
-          noiseSource.stop(stopWhen + 0.05);
-        } catch {}
-      },
-    };
+    return handle;
   }
 
   triggerTrack(track, when = this.audioContext.currentTime, sliceIndex = null, noteDuration = null, pitchOverride = null) {
@@ -1636,10 +1978,11 @@ class TransportLayer {
   scheduleStep(stepIndex, when) {
     const baseStep = this.state.composer.enabled ? this.state.composer.currentSlotStep : stepIndex;
     processQueuedPatternSwitchesAtStep(baseStep);
-    this.state.tracks.forEach((track) => {
+    this.state.tracks.forEach((track, trackIndex) => {
       const playbackPattern = getTrackPlaybackPattern(track);
       const patternForPlayback = playbackPattern ?? getTrackPattern(track);
       if (!playbackPattern && this.state.composer.enabled) return;
+      if (isMomentaryEffectPerforming(trackIndex, "stutter")) return;
       if (!shouldAdvanceTrackStep(track, baseStep, patternForPlayback)) return;
       const cellIndex = resolveTrackPatternStep(track, { advance: true, pattern: patternForPlayback });
       const playbackState = this.state.trackPlaybackState[track.id - 1];
@@ -1901,6 +2244,10 @@ const state = {
     trackIndex: 0,
     effectKey: "filter",
   },
+  selectedMomentaryEffectSettings: {
+    trackIndex: 0,
+    effectKey: "crackle",
+  },
   selectedStepKeys: new Set(),
   pitchRangeAnchorMidi: null,
   copiedTrackPattern: null,
@@ -1909,9 +2256,11 @@ const state = {
   mixVolume: 0.9,
   composer: createDefaultComposerState(),
   patternSwitcher: createDefaultPatternSwitcherState(),
+  momentaryEffects: createDefaultMomentaryEffectsState(),
 };
 
 const sampleCache = new Map();
+const momentaryHeldEffectKeys = new Set();
 
 function getStepSelectionKey(trackIndex, cellIndex) {
   return `${trackIndex}:${cellIndex}`;
@@ -2051,6 +2400,7 @@ function refreshAfterSequencerTrackOperation(trackIndex = state.selectedTrackInd
   syncUi();
   renderTrackSelector();
   renderEffectsMatrix();
+  renderMomentaryEffectsMatrix();
   renderSequencePatternSwitcher();
   renderMixer();
   renderPattern();
@@ -2399,6 +2749,38 @@ function getSelectedEffectSettingsState() {
   return state.selectedEffectSettings;
 }
 
+function getSelectedMomentaryEffectSettingsState() {
+  const trackIndex = Math.max(0, Math.min(TRACK_COUNT - 1, Number(state.selectedMomentaryEffectSettings?.trackIndex) || 0));
+  const effectKey = MOMENTARY_EFFECT_KEYS.includes(state.selectedMomentaryEffectSettings?.effectKey)
+    ? state.selectedMomentaryEffectSettings.effectKey
+    : "crackle";
+  state.selectedMomentaryEffectSettings = { trackIndex, effectKey };
+  return state.selectedMomentaryEffectSettings;
+}
+
+function getMomentaryTrackSettings(trackIndex) {
+  const safeIndex = Math.max(0, Math.min(TRACK_COUNT - 1, Number(trackIndex) || 0));
+  const fallback = createDefaultMomentaryEffectSettings();
+  state.momentaryEffects.settings[safeIndex] = normalizeMomentaryEffectSettings(
+    state.momentaryEffects.settings[safeIndex],
+    fallback,
+  );
+  return state.momentaryEffects.settings[safeIndex];
+}
+
+function getMomentaryEffectSettings(trackIndex, effectKey) {
+  const settings = getMomentaryTrackSettings(trackIndex);
+  return settings[effectKey] ?? createDefaultMomentaryEffectSettings()[effectKey];
+}
+
+function isMomentaryEffectArmed(trackIndex, effectKey) {
+  return Boolean(state.momentaryEffects.armed?.[trackIndex]?.[effectKey]);
+}
+
+function isMomentaryEffectPerforming(trackIndex, effectKey) {
+  return Boolean(state.momentaryEffects.active?.[effectKey] && isMomentaryEffectArmed(trackIndex, effectKey));
+}
+
 function selectPatternEffectSettings(trackIndex, effectKey) {
   if (!state.tracks[trackIndex] || !EFFECT_KEYS.includes(effectKey)) return;
   state.selectedTrackIndex = trackIndex;
@@ -2676,6 +3058,289 @@ function syncPatternEffectSettingsPanel() {
   }
 
   refreshRangeFills(root);
+}
+
+function createMomentaryDirectionToggle(speedSettings) {
+  const field = document.createElement("div");
+  field.className = "compact-field";
+  const label = document.createElement("span");
+  label.textContent = "Direction";
+
+  const group = document.createElement("div");
+  group.className = "voice-operation-button-group composer-toggle-group momentary-direction-toggle";
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", "Speed direction");
+
+  [
+    ["up", "Up"],
+    ["down", "Down"],
+  ].forEach(([direction, text]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    button.classList.toggle("active", speedSettings.direction === direction);
+    button.setAttribute("aria-pressed", String(speedSettings.direction === direction));
+    button.addEventListener("click", () => updateMomentaryEffectSettings(
+      getSelectedMomentaryEffectSettingsState().trackIndex,
+      "speed",
+      { direction },
+    ));
+    group.append(button);
+  });
+
+  field.append(label, group);
+  return field;
+}
+
+function renderMomentaryEffectSettingsControls(effectKey) {
+  const body = ui.momentaryEffectSettingsBody;
+  if (!body) return;
+  body.innerHTML = "";
+  body.dataset.effectKey = effectKey;
+  const selection = getSelectedMomentaryEffectSettingsState();
+
+  if (effectKey === "crackle") {
+    const crackle = getMomentaryEffectSettings(selection.trackIndex, "crackle");
+    body.append(
+      createEffectSettingsSlider({
+        id: "momentary-effect-crackle-speed",
+        label: "Speed",
+        min: 0.5,
+        max: 40,
+        step: 0.5,
+        value: crackle.speed,
+        valueText: `${crackle.speed.toFixed(crackle.speed >= 10 ? 0 : 1)} Hz`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { speed: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-crackle-density",
+        label: "Density",
+        min: 0,
+        max: 100,
+        value: Math.round(crackle.density),
+        valueText: `${Math.round(crackle.density)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { density: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-crackle-depth",
+        label: "Depth",
+        min: 0,
+        max: 100,
+        value: Math.round(crackle.depth),
+        valueText: `${Math.round(crackle.depth)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { depth: Number(input.value) }),
+      }),
+    );
+    return;
+  }
+
+  if (effectKey === "stutter") {
+    const stutter = getMomentaryEffectSettings(selection.trackIndex, "stutter");
+    body.append(
+      createEffectSettingsSlider({
+        id: "momentary-effect-stutter-attack",
+        label: "Attack",
+        min: 0,
+        max: 200,
+        value: Math.round(stutter.attack),
+        valueText: `${Math.round(stutter.attack)} ms`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "stutter", { attack: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-stutter-release",
+        label: "Release",
+        min: 0,
+        max: 400,
+        value: Math.round(stutter.release),
+        valueText: `${Math.round(stutter.release)} ms`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "stutter", { release: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-stutter-length",
+        label: "Length",
+        min: 0,
+        max: 100,
+        value: Math.round(stutter.length),
+        valueText: `${Math.round(stutter.length)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "stutter", { length: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-stutter-cycle-speed",
+        label: "Cycle Speed",
+        min: 0.5,
+        max: 40,
+        step: 0.5,
+        value: stutter.cycleSpeed,
+        valueText: `${stutter.cycleSpeed.toFixed(stutter.cycleSpeed >= 10 ? 0 : 1)} Hz`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "stutter", { cycleSpeed: Number(input.value) }),
+      }),
+    );
+    return;
+  }
+
+  if (effectKey === "speed") {
+    const speed = getMomentaryEffectSettings(selection.trackIndex, "speed");
+    body.append(
+      createMomentaryDirectionToggle(speed),
+      createEffectSettingsSlider({
+        id: "momentary-effect-speed-range",
+        label: "Range",
+        min: 0,
+        max: 24,
+        step: 1,
+        value: Math.round(speed.range),
+        valueText: `${Math.round(speed.range)} st`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "speed", { range: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-speed-amount",
+        label: "Pitch Mod",
+        min: 0,
+        max: 100,
+        value: Math.round(speed.amount),
+        valueText: `${Math.round(speed.amount)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "speed", { amount: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-speed-easing",
+        label: "Easing",
+        min: 0,
+        max: 100,
+        value: Math.round(speed.easing),
+        valueText: `${Math.round(speed.easing)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "speed", { easing: Number(input.value) }),
+      }),
+    );
+    return;
+  }
+
+  if (effectKey === "glitch") {
+    const glitch = getMomentaryEffectSettings(selection.trackIndex, "glitch");
+    body.append(
+      createEffectSettingsSlider({
+        id: "momentary-effect-glitch-speed",
+        label: "Speed",
+        min: 0.5,
+        max: 40,
+        step: 0.5,
+        value: glitch.speed,
+        valueText: `${glitch.speed.toFixed(glitch.speed >= 10 ? 0 : 1)} Hz`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "glitch", { speed: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-glitch-pitch",
+        label: "Pitch",
+        min: 0,
+        max: 100,
+        value: Math.round(glitch.pitch),
+        valueText: `${Math.round(glitch.pitch)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "glitch", { pitch: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-glitch-volume",
+        label: "Volume",
+        min: 0,
+        max: 100,
+        value: Math.round(glitch.volume),
+        valueText: `${Math.round(glitch.volume)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "glitch", { volume: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-glitch-filter",
+        label: "Filter",
+        min: 0,
+        max: 100,
+        value: Math.round(glitch.filter),
+        valueText: `${Math.round(glitch.filter)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "glitch", { filter: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-glitch-pan",
+        label: "Pan",
+        min: 0,
+        max: 100,
+        value: Math.round(glitch.pan),
+        valueText: `${Math.round(glitch.pan)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "glitch", { pan: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "momentary-effect-glitch-glide",
+        label: "Glide",
+        min: 0,
+        max: 100,
+        value: Math.round(glitch.glide),
+        valueText: `${Math.round(glitch.glide)}%`,
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "glitch", { glide: Number(input.value) }),
+      }),
+    );
+  }
+}
+
+function syncMomentaryEffectSettingsPanel() {
+  if (!ui.momentaryEffectSettingsBody) return;
+  const selection = getSelectedMomentaryEffectSettingsState();
+  const track = state.tracks[selection.trackIndex] ?? getSelectedTrack();
+  const label = MOMENTARY_EFFECT_LABELS[selection.effectKey] ?? selection.effectKey;
+  const keyLabel = MOMENTARY_EFFECT_HOTKEYS[selection.effectKey]?.toUpperCase() ?? "";
+  const armed = isMomentaryEffectArmed(selection.trackIndex, selection.effectKey);
+  const performing = isMomentaryEffectPerforming(selection.trackIndex, selection.effectKey);
+
+  if (ui.momentaryEffectSettingsTitle) {
+    ui.momentaryEffectSettingsTitle.textContent = `${label} Settings`;
+  }
+  if (ui.momentaryEffectSettingsTrack) {
+    ui.momentaryEffectSettingsTrack.textContent = `${track.name} • ${keyLabel} • ${performing ? "Held" : armed ? "Armed" : "Off"}`;
+  }
+
+  if (ui.momentaryEffectSettingsBody.dataset.effectKey !== selection.effectKey) {
+    renderMomentaryEffectSettingsControls(selection.effectKey);
+  }
+
+  const root = ui.momentaryEffectSettingsBody;
+  const settings = getMomentaryEffectSettings(selection.trackIndex, selection.effectKey);
+  if (selection.effectKey === "crackle") {
+    [
+      ["speed", settings.speed, `${settings.speed.toFixed(settings.speed >= 10 ? 0 : 1)} Hz`],
+      ["density", settings.density, `${Math.round(settings.density)}%`],
+      ["depth", settings.depth, `${Math.round(settings.depth)}%`],
+    ].forEach(([key, value, text]) => syncSliderValue(root, `#momentary-effect-crackle-${key}`, value, text));
+  } else if (selection.effectKey === "stutter") {
+    [
+      ["attack", settings.attack, `${Math.round(settings.attack)} ms`],
+      ["release", settings.release, `${Math.round(settings.release)} ms`],
+      ["length", settings.length, `${Math.round(settings.length)}%`],
+      ["cycle-speed", settings.cycleSpeed, `${settings.cycleSpeed.toFixed(settings.cycleSpeed >= 10 ? 0 : 1)} Hz`],
+    ].forEach(([key, value, text]) => syncSliderValue(root, `#momentary-effect-stutter-${key}`, value, text));
+  } else if (selection.effectKey === "speed") {
+    root.querySelectorAll(".momentary-direction-toggle button").forEach((button) => {
+      const isActive = button.textContent?.toLowerCase() === settings.direction;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
+    [
+      ["range", settings.range, `${Math.round(settings.range)} st`],
+      ["amount", settings.amount, `${Math.round(settings.amount)}%`],
+      ["easing", settings.easing, `${Math.round(settings.easing)}%`],
+    ].forEach(([key, value, text]) => syncSliderValue(root, `#momentary-effect-speed-${key}`, value, text));
+  } else if (selection.effectKey === "glitch") {
+    [
+      ["speed", settings.speed, `${settings.speed.toFixed(settings.speed >= 10 ? 0 : 1)} Hz`],
+      ["pitch", settings.pitch, `${Math.round(settings.pitch)}%`],
+      ["volume", settings.volume, `${Math.round(settings.volume)}%`],
+      ["filter", settings.filter, `${Math.round(settings.filter)}%`],
+      ["pan", settings.pan, `${Math.round(settings.pan)}%`],
+      ["glide", settings.glide, `${Math.round(settings.glide)}%`],
+    ].forEach(([key, value, text]) => syncSliderValue(root, `#momentary-effect-glitch-${key}`, value, text));
+  }
+
+  refreshRangeFills(root);
+}
+
+function syncSliderValue(root, selector, value, text) {
+  const input = root.querySelector(selector);
+  const pill = root.querySelector(`${selector}-value`);
+  if (input instanceof HTMLInputElement) input.value = String(value);
+  if (pill) pill.textContent = text;
 }
 
 function getTrackBusPattern(track) {
@@ -3110,6 +3775,42 @@ function syncTrackPlaybackStateForPatternSwitch(trackIndex, previousPattern = nu
   state.trackPlaybackState[trackIndex] = playbackState;
 }
 
+function getCurrentTransportScheduleBaseStep() {
+  if (state.composer.enabled) {
+    return Math.max(0, Number(state.composer.currentSlotStep) || 0);
+  }
+  if (state.transport && Number.isFinite(Number(state.transport.currentStep))) {
+    return Math.max(0, Number(state.transport.currentStep));
+  }
+  return Math.max(0, Number(state.currentTransportStep) || 0);
+}
+
+function syncTrackPlaybackStateToTransport(trackIndex) {
+  const track = state.tracks[trackIndex];
+  if (!track) return;
+  const pattern = getTrackPlaybackPattern(track) ?? getTrackPattern(track);
+  const visibleCellCount = getTrackVisibleCellCount(track, pattern);
+  const baseStep = getCurrentTransportScheduleBaseStep();
+  const slot = Math.max(0, Math.min(visibleCellCount - 1, getTrackScheduleSlot(track, baseStep, pattern)));
+  const playbackState = state.trackPlaybackState[trackIndex] ?? createTrackPlaybackState(track, pattern);
+  playbackState.patternIndex = slot;
+  playbackState.lastPatternIndex = slot;
+  playbackState.lastTriggeredPatternIndex = -1;
+  playbackState.lastTriggeredPitchMidi = null;
+  playbackState.lastScheduledSlot = -1;
+  playbackState.lastHeldPitchMidi = null;
+  playbackState.lastLoopingPitchMidi = null;
+  playbackState.nextLoopingTriggerTime = -1;
+  if (pattern.playbackMode === "reverse") {
+    playbackState.patternDirection = -1;
+  } else if (pattern.playbackMode === "ping-pong") {
+    playbackState.patternDirection = slot >= visibleCellCount - 1 ? -1 : 1;
+  } else {
+    playbackState.patternDirection = 1;
+  }
+  state.trackPlaybackState[trackIndex] = playbackState;
+}
+
 function normalizeTrack(index, source = {}) {
   const fallback = createTrack(index + 1);
   const resolvedVoiceIndex = Number.isFinite(Number(source.voiceIndex)) ? Number(source.voiceIndex) : fallback.voiceIndex;
@@ -3301,6 +4002,15 @@ function createSessionSnapshot() {
     patternSwitcher: {
       switchMode: state.patternSwitcher.switchMode,
     },
+    momentaryEffects: {
+      armed: state.momentaryEffects.armed.map((row) => ({ ...row })),
+      settings: state.momentaryEffects.settings.map((settings) => ({
+        crackle: { ...settings.crackle },
+        stutter: { ...settings.stutter },
+        speed: { ...settings.speed },
+        glitch: { ...settings.glitch },
+      })),
+    },
     sample: {
       regionStart: state.sample.regionStart,
       regionEnd: state.sample.regionEnd,
@@ -3373,12 +4083,13 @@ function applyStoredSession(snapshot = readStoredSession()) {
   state.selectedVoiceIndex = Number.isFinite(stored.selectedVoiceIndex)
     ? Math.max(0, Math.min(TRACK_COUNT - 1, stored.selectedVoiceIndex))
     : 0;
-  state.workspaceTab = ["voices", "session", "patterns", "track-effects", "pattern-switcher", "composer"].includes(stored.workspaceTab)
+  state.workspaceTab = ["voices", "session", "patterns", "track-effects", "pattern-switcher", "momentary-effects", "composer"].includes(stored.workspaceTab)
     ? stored.workspaceTab
     : state.workspaceTab;
   state.mixVolume = Number.isFinite(stored.mixVolume) ? Math.max(0, Math.min(1, stored.mixVolume)) : state.mixVolume;
   state.composer = normalizeComposerState(stored.composer);
   state.patternSwitcher = createDefaultPatternSwitcherState(stored.patternSwitcher);
+  state.momentaryEffects = normalizeMomentaryEffectsState(stored.momentaryEffects);
   const legacySampleRegion = stored.sample
     ? {
       start: Number.isFinite(stored.sample.regionStart) ? stored.sample.regionStart : 0,
@@ -6183,10 +6894,67 @@ function renderEffectsMatrix() {
   });
 }
 
+function renderMomentaryEffectsMatrix() {
+  if (!ui.momentaryEffectsMatrix) return;
+  ui.momentaryEffectsMatrix.innerHTML = "";
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "effects-matrix-row effects-matrix-header";
+  MOMENTARY_EFFECT_KEYS.forEach((effectKey) => {
+    const headerCell = document.createElement("div");
+    headerCell.className = "effects-axis-label effects-track-head momentary-key-label";
+    const label = document.createElement("span");
+    label.textContent = MOMENTARY_EFFECT_LABELS[effectKey] ?? effectKey;
+    const badge = document.createElement("span");
+    badge.className = "momentary-key-badge";
+    badge.textContent = MOMENTARY_EFFECT_HOTKEYS[effectKey].toUpperCase();
+    headerCell.append(label, badge);
+    headerRow.append(headerCell);
+  });
+  ui.momentaryEffectsMatrix.append(headerRow);
+
+  const selected = getSelectedMomentaryEffectSettingsState();
+  state.tracks.forEach((track, trackIndex) => {
+    const row = document.createElement("div");
+    row.className = "effects-matrix-row effects-row";
+
+    const labelCell = document.createElement("div");
+    labelCell.className = `effects-axis-label effects-row-label${trackIndex === state.selectedTrackIndex ? " active" : ""}`;
+    labelCell.textContent = `T${track.id}`;
+    applyTrackColor(labelCell, track.color);
+    row.append(labelCell);
+
+    MOMENTARY_EFFECT_KEYS.forEach((effectKey) => {
+      const armed = isMomentaryEffectArmed(trackIndex, effectKey);
+      const performing = isMomentaryEffectPerforming(trackIndex, effectKey);
+      const isSelectedEffect = selected.trackIndex === trackIndex && selected.effectKey === effectKey;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `effects-cell effects-toggle${armed ? " active" : ""}${performing ? " performing" : ""}${trackIndex === state.selectedTrackIndex ? " selected" : ""}${isSelectedEffect ? " settings-selected" : ""}`;
+      applyTrackColor(button, track.color);
+      button.innerHTML = `<span>${performing ? "Held" : armed ? "Armed" : "Off"}</span><span class="momentary-effect-secondary">${MOMENTARY_EFFECT_HOTKEYS[effectKey].toUpperCase()}</span>`;
+      button.title = `${track.name} ${MOMENTARY_EFFECT_LABELS[effectKey]} ${armed ? "armed" : "off"}; hold ${MOMENTARY_EFFECT_HOTKEYS[effectKey].toUpperCase()} to perform.`;
+      button.addEventListener("click", () => {
+        state.selectedTrackIndex = trackIndex;
+        state.selectedMomentaryEffectSettings = { trackIndex, effectKey };
+        state.momentaryEffects.armed[trackIndex][effectKey] = !state.momentaryEffects.armed[trackIndex][effectKey];
+        updateMomentaryEffectsForTrack(trackIndex);
+        syncUi();
+        renderMomentaryEffectsMatrix();
+        writeStoredSession();
+      });
+      row.append(button);
+    });
+
+    ui.momentaryEffectsMatrix.append(row);
+  });
+}
+
 function refreshAfterTrackPatternActivation({ persist = true } = {}) {
   syncUi();
   renderTrackSelector();
   renderEffectsMatrix();
+  renderMomentaryEffectsMatrix();
   renderSequencePatternSwitcher();
   renderMixer();
   renderPattern();
@@ -6775,6 +7543,7 @@ function syncUi() {
   ui.mixVolume.value = String(Math.round(state.mixVolume * 100));
   ui.mixVolumeValue.textContent = `${Math.round(state.mixVolume * 100)}%`;
   renderPitchLanes();
+  renderMomentaryEffectsMatrix();
   renderSequencePatternSwitcher();
   renderComposerGrid();
   syncWorkspaceTabs();
@@ -6789,6 +7558,7 @@ function syncUi() {
   syncDriftOverlay();
   syncSwellOverlay();
   syncPatternEffectSettingsPanel();
+  syncMomentaryEffectSettingsPanel();
   syncSequencerActions();
   ui.regionStart.value = String(Math.round(state.sample.regionStart * 1000));
   ui.regionEnd.value = String(Math.round(state.sample.regionEnd * 1000));
@@ -7085,6 +7855,7 @@ function clearCurrentSessionSettings() {
   state.mixVolume = 0.9;
   state.composer = createDefaultComposerState();
   state.patternSwitcher = createDefaultPatternSwitcherState();
+  state.momentaryEffects = createDefaultMomentaryEffectsState();
   updateVoiceSampleRegion(state.selectedVoiceIndex, 0, 1);
   state.filterOverlay.open = false;
   state.delayOverlay.open = false;
@@ -7145,6 +7916,73 @@ function updateTrackSwell(trackIndex, patch) {
   syncUi();
   renderEffectsMatrix();
   writeStoredSession();
+}
+
+function updateMomentaryEffectsForTrack(trackIndex) {
+  state.playback?.updateMomentaryTrackBus(trackIndex);
+  state.playback?.applyMomentaryPitchForTrack(trackIndex);
+}
+
+function updateMomentaryEffectSettings(trackIndex, effectKey, patch) {
+  if (!state.tracks[trackIndex] || !MOMENTARY_EFFECT_KEYS.includes(effectKey)) return;
+  const current = getMomentaryTrackSettings(trackIndex);
+  current[effectKey] = {
+    ...current[effectKey],
+    ...patch,
+  };
+  state.momentaryEffects.settings[trackIndex] = normalizeMomentaryEffectSettings(current, current);
+  updateMomentaryEffectsForTrack(trackIndex);
+  syncUi();
+  renderMomentaryEffectsMatrix();
+  writeStoredSession();
+}
+
+function setMomentaryEffectActive(effectKey, active) {
+  if (!MOMENTARY_EFFECT_KEYS.includes(effectKey)) return;
+  const nextActive = Boolean(active);
+  const wasActive = Boolean(state.momentaryEffects.active[effectKey]);
+  if (wasActive === nextActive) return;
+  const affectedTrackIndexes = state.tracks
+    .map((_, trackIndex) => trackIndex)
+    .filter((trackIndex) => isMomentaryEffectArmed(trackIndex, effectKey));
+  state.momentaryEffects.active[effectKey] = nextActive;
+  if (effectKey === "stutter" && wasActive && !nextActive) {
+    affectedTrackIndexes.forEach((trackIndex) => syncTrackPlaybackStateToTransport(trackIndex));
+  }
+  state.tracks.forEach((_, trackIndex) => {
+    if (!isMomentaryEffectArmed(trackIndex, effectKey)) return;
+    if (effectKey === "speed") {
+      state.playback?.applyMomentaryPitchForTrack(trackIndex, state.playback.getMomentarySpeedRampSeconds(trackIndex, active));
+    } else {
+      updateMomentaryEffectsForTrack(trackIndex);
+    }
+  });
+  renderMomentaryEffectsMatrix();
+  syncMomentaryEffectSettingsPanel();
+}
+
+function releaseAllMomentaryEffects() {
+  MOMENTARY_EFFECT_KEYS.forEach((effectKey) => setMomentaryEffectActive(effectKey, false));
+}
+
+function getMomentaryEffectKeyForKeyboardEvent(event) {
+  const key = String(event.key ?? "").toLowerCase();
+  return MOMENTARY_EFFECT_KEYS.find((effectKey) => MOMENTARY_EFFECT_HOTKEYS[effectKey] === key) ?? null;
+}
+
+function isMomentaryHotkeyBlockedTarget(target) {
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  if (!(target instanceof HTMLInputElement)) return false;
+  return !["range", "checkbox", "radio", "button"].includes(target.type);
+}
+
+function clearMomentaryHotkeyFocus() {
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) return;
+  if (!activeElement.closest(".workspace-panel-momentary-effects")) return;
+  if (isMomentaryHotkeyBlockedTarget(activeElement)) return;
+  activeElement.blur();
 }
 
 function sanitizeFloatField(input, fallback) {
@@ -7740,6 +8578,23 @@ window.addEventListener("keydown", async (event) => {
     closeSampleBrowser();
     return;
   }
+  const momentaryEffectKey = getMomentaryEffectKeyForKeyboardEvent(event);
+  if (momentaryEffectKey && !isMomentaryHotkeyBlockedTarget(event.target)) {
+    event.preventDefault();
+    clearMomentaryHotkeyFocus();
+    if (!event.repeat) {
+      momentaryHeldEffectKeys.add(momentaryEffectKey);
+      try {
+        await ensureAudio();
+        if (momentaryHeldEffectKeys.has(momentaryEffectKey)) {
+          setMomentaryEffectActive(momentaryEffectKey, true);
+        }
+      } catch (error) {
+        setDiagnostics(`momentary effect failed: ${error.message}`, "error");
+      }
+    }
+    return;
+  }
   if (event.code !== "Space") return;
   if (isEditableEventTarget(event.target)) return;
   event.preventDefault();
@@ -7765,6 +8620,18 @@ window.addEventListener("keydown", async (event) => {
   }
 });
 
+window.addEventListener("keyup", (event) => {
+  const momentaryEffectKey = getMomentaryEffectKeyForKeyboardEvent(event);
+  if (!momentaryEffectKey) return;
+  momentaryHeldEffectKeys.delete(momentaryEffectKey);
+  setMomentaryEffectActive(momentaryEffectKey, false);
+});
+
+window.addEventListener("blur", () => {
+  momentaryHeldEffectKeys.clear();
+  releaseAllMomentaryEffects();
+});
+
 applyStoredSession();
 syncTransportButton();
 syncUi();
@@ -7774,6 +8641,7 @@ renderSampleLibrary();
 syncSampleBrowserOverlay();
 renderTrackSelector();
 renderEffectsMatrix();
+renderMomentaryEffectsMatrix();
 renderSequencePatternSwitcher();
 renderMixer();
 renderPattern();

@@ -100,6 +100,7 @@
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="patterns">Pattern Settings</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="track-effects">Pattern Effects</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="pattern-switcher">Pattern Switcher</button>
+            <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="momentary-effects">Momentary Effects</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="composer">Composer</button>
             <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-workspace-tab="session">Session</button>
           </div>
@@ -665,6 +666,24 @@
               </div>
             </section>
 
+            <section class="workspace-panel workspace-panel-momentary-effects" data-workspace-panel="momentary-effects">
+              <div class="pattern-effects-layout momentary-effects-layout">
+                <section class="control-group nested-control-group pattern-effects-matrix-panel" aria-labelledby="momentary-effects-matrix-title">
+                  <div class="control-group-head">
+                    <h3 id="momentary-effects-matrix-title">Triggers</h3>
+                  </div>
+                  <div id="momentary-effects-matrix" class="effects-matrix momentary-effects-matrix"></div>
+                </section>
+                <section class="control-group nested-control-group pattern-effect-settings-panel" aria-labelledby="momentary-effect-settings-title">
+                  <div class="control-group-head">
+                    <h3 id="momentary-effect-settings-title">Crackle Settings</h3>
+                    <p id="momentary-effect-settings-track" class="effect-settings-context">Track 1 • Q</p>
+                  </div>
+                  <div id="momentary-effect-settings-body" class="control-stack pattern-effect-settings-body momentary-effect-settings-body"></div>
+                </section>
+              </div>
+            </section>
+
             <section class="workspace-panel workspace-panel-composer" data-workspace-panel="composer">
               <div id="composer-grid" class="effects-matrix composer-matrix"></div>
               <div class="composer-actions">
@@ -795,7 +814,7 @@
         </div>
         <div class="control-stack overlay-controls">
           <section class="control-group nested-control-group">
-            <p class="session-clear-message">Clock, Mix, Sequencer, Voices, Patterns, Pattern Effects, Pattern Switcher, and Composer settings will be cleared.</p>
+            <p class="session-clear-message">Clock, Mix, Sequencer, Voices, Patterns, Pattern Effects, Pattern Switcher, Momentary Effects, and Composer settings will be cleared.</p>
           </section>
           <div class="action-row">
             <button id="session-clear-cancel" type="button">Cancel</button>
