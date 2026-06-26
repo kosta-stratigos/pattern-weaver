@@ -1435,12 +1435,15 @@ class PlaybackLayer {
         const noiseFilterFrequency = clampCrackleNoiseFilterFrequency(crackle.noiseFilter, 12000);
         const noiseFilterQ = clampCrackleNoiseFilterQ(crackle.noiseQ, 0.8);
         const cycleSeconds = 1 / clampMomentarySpeedHz(crackle.speed, 14);
-        const hit = Math.random() < density;
+        const sampleValue = Math.random();
+        const dropoutThreshold = 1 - density;
+        const hit = sampleValue >= dropoutThreshold;
         if (hit) {
-          const severity = depth * (0.35 + Math.random() * 0.65);
-          const noiseLevel = Math.min(0.95, (0.02 + severity * 0.18) * (0.45 + density * 0.55) * noiseAmount);
-          const burstDuration = cycleSeconds * (0.08 + Math.random() * 0.2);
-          runtime.crackleGain = Math.max(0.025, 1 - severity);
+          const thresholdOvershoot = density > 0 ? (sampleValue - dropoutThreshold) / density : 0;
+          const dropoutGain = depth >= 0.995 ? 0.0001 : 1 - depth;
+          const noiseLevel = Math.min(0.95, (0.025 + depth * 0.2) * (0.65 + thresholdOvershoot * 0.35) * noiseAmount);
+          const burstDuration = cycleSeconds * (0.1 + thresholdOvershoot * 0.18);
+          runtime.crackleGain = Math.max(0.0001, dropoutGain);
           if (Math.random() < noiseDensity) {
             this.triggerCrackleNoiseBurst(
               bus,
@@ -1453,16 +1456,6 @@ class PlaybackLayer {
           }
         } else {
           runtime.crackleGain = 1;
-          if (Math.random() < density * depth * noiseDensity * 0.08) {
-            this.triggerCrackleNoiseBurst(
-              bus,
-              (0.008 + depth * 0.055 * Math.random()) * noiseAmount,
-              noiseFilterFrequency,
-              noiseFilterQ,
-              now,
-              cycleSeconds * 0.08,
-            );
-          }
         }
         runtime.crackleNextTime = now + cycleSeconds;
       }
