@@ -397,6 +397,24 @@ function clampMomentarySemitones(value, fallback = 12) {
   return Math.max(0, Math.min(24, Math.round(resolved)));
 }
 
+function clampCrackleNoiseAmount(value, fallback = 100) {
+  const fallbackNumeric = Number.isFinite(Number(fallback)) ? Number(fallback) : 100;
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallbackNumeric;
+  return Math.max(0, Math.min(400, resolved));
+}
+
+function clampCrackleNoiseFilterFrequency(value, fallback = 12000) {
+  const fallbackNumeric = Number.isFinite(Number(fallback)) ? Number(fallback) : 12000;
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallbackNumeric;
+  return Math.max(1200, Math.min(16000, resolved));
+}
+
+function clampCrackleNoiseFilterQ(value, fallback = 0.8) {
+  const fallbackNumeric = Number.isFinite(Number(fallback)) ? Number(fallback) : 0.8;
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallbackNumeric;
+  return Math.max(0.1, Math.min(12, resolved));
+}
+
 function clampMidiNote(value, fallback = SYNTH_TUNE_DEFAULT_MIDI) {
   return Math.max(24, Math.min(84, clampIntegerText(value, fallback)));
 }
@@ -486,6 +504,10 @@ function createDefaultMomentaryEffectSettings() {
       speed: 14,
       density: 42,
       depth: 78,
+      noise: 100,
+      noiseDensity: 100,
+      noiseFilter: 12000,
+      noiseQ: 0.8,
     },
     stutter: {
       attack: 8,
@@ -701,6 +723,10 @@ function normalizeMomentaryEffectSettings(source = {}, fallback = createDefaultM
       speed: clampMomentarySpeedHz(source.crackle?.speed ?? fallback.crackle.speed, fallback.crackle.speed),
       density: clampUnitPercent(source.crackle?.density ?? fallback.crackle.density, fallback.crackle.density),
       depth: clampUnitPercent(source.crackle?.depth ?? fallback.crackle.depth, fallback.crackle.depth),
+      noise: clampCrackleNoiseAmount(source.crackle?.noise ?? fallback.crackle.noise, fallback.crackle.noise),
+      noiseDensity: clampUnitPercent(source.crackle?.noiseDensity ?? fallback.crackle.noiseDensity, fallback.crackle.noiseDensity),
+      noiseFilter: clampCrackleNoiseFilterFrequency(source.crackle?.noiseFilter ?? fallback.crackle.noiseFilter, fallback.crackle.noiseFilter),
+      noiseQ: clampCrackleNoiseFilterQ(source.crackle?.noiseQ ?? fallback.crackle.noiseQ, fallback.crackle.noiseQ),
     },
     stutter: {
       attack: clampMomentaryMs(source.stutter?.attack ?? fallback.stutter.attack, 0, 200, fallback.stutter.attack),
@@ -1097,6 +1123,9 @@ class PlaybackLayer {
     const momentaryGain = this.audioContext.createGain();
     const momentaryFilter = this.audioContext.createBiquadFilter();
     const momentaryPanOffset = this.audioContext.createConstantSource();
+    const crackleNoiseSource = this.audioContext.createBufferSource();
+    const crackleNoiseFilter = this.audioContext.createBiquadFilter();
+    const crackleNoiseGain = this.audioContext.createGain();
 
     outputGain.connect(panNode);
     panNode.connect(this.output);
@@ -1104,6 +1133,12 @@ class PlaybackLayer {
     momentaryFilter.type = "lowpass";
     momentaryFilter.frequency.value = 16000;
     momentaryFilter.Q.value = 0.7;
+    crackleNoiseSource.buffer = this.noiseBuffer;
+    crackleNoiseSource.loop = true;
+    crackleNoiseFilter.type = "lowpass";
+    crackleNoiseFilter.frequency.value = 12000;
+    crackleNoiseFilter.Q.value = 0.8;
+    crackleNoiseGain.gain.value = 0;
     stutterDryGain.gain.value = 1;
     stutterSend.gain.value = 0;
     stutterFeedbackGain.gain.value = 0;
@@ -1127,10 +1162,14 @@ class PlaybackLayer {
     stutterDelay.connect(stutterFeedbackGain);
     stutterFeedbackGain.connect(stutterDelay);
     momentaryGain.connect(momentaryFilter);
+    crackleNoiseSource.connect(crackleNoiseFilter);
+    crackleNoiseFilter.connect(crackleNoiseGain);
+    crackleNoiseGain.connect(momentaryFilter);
     momentaryFilter.connect(outputGain);
     panCenter.start();
     panLfo.start();
     momentaryPanOffset.start();
+    crackleNoiseSource.start();
     gainCenter.start();
     gainLfo.start();
 
@@ -1161,6 +1200,9 @@ class PlaybackLayer {
       momentaryGain,
       momentaryFilter,
       momentaryPanOffset,
+      crackleNoiseSource,
+      crackleNoiseFilter,
+      crackleNoiseGain,
       momentaryLoopId: null,
       momentaryRuntime: {
         crackleGain: 1,
@@ -1287,6 +1329,27 @@ class PlaybackLayer {
     param.setTargetAtTime(value, when, glide);
   }
 
+  triggerCrackleNoiseBurst(bus, level, cutoffFrequency, filterQ = 0.8, when = this.audioContext.currentTime, durationSeconds = 0.018) {
+    if (!bus?.crackleNoiseGain || !bus?.crackleNoiseFilter) return;
+    const burstLevel = Math.max(0, Math.min(0.95, Number(level) || 0));
+    const burstDuration = Math.max(0.006, Math.min(0.065, Number(durationSeconds) || 0.018));
+    const gain = bus.crackleNoiseGain.gain;
+    gain.cancelScheduledValues(when);
+    if (burstLevel <= 0.0001) {
+      gain.setValueAtTime(0, when);
+      return;
+    }
+    const filterFrequency = clampCrackleNoiseFilterFrequency(cutoffFrequency, 12000);
+    const q = clampCrackleNoiseFilterQ(filterQ, 0.8);
+    bus.crackleNoiseFilter.frequency.cancelScheduledValues(when);
+    bus.crackleNoiseFilter.Q.cancelScheduledValues(when);
+    bus.crackleNoiseFilter.frequency.setValueAtTime(filterFrequency, when);
+    bus.crackleNoiseFilter.Q.setValueAtTime(q, when);
+    gain.setValueAtTime(burstLevel, when);
+    gain.linearRampToValueAtTime(0.0001, when + burstDuration);
+    gain.setValueAtTime(0, when + burstDuration + 0.001);
+  }
+
   getGlitchGlideSeconds(trackIndex) {
     const glitch = getMomentaryEffectSettings(trackIndex, "glitch");
     return (clampUnitPercent(glitch.glide, 0) / 100) * 0.18;
@@ -1347,6 +1410,7 @@ class PlaybackLayer {
       bus.momentaryRuntime.glitchVolume = 1;
       bus.momentaryRuntime.glitchPitchRatio = 1;
       bus.momentaryRuntime.glitchPan = 0;
+      this.triggerCrackleNoiseBurst(bus, 0, 12000, 0.8, now);
       this.setMomentaryAudioParam(bus.momentaryGain.gain, 1, now, 0.018);
       this.setMomentaryAudioParam(bus.momentaryFilter.frequency, 16000, now, 0.018);
       this.setMomentaryAudioParam(bus.momentaryFilter.Q, 0.7, now, 0.018);
@@ -1366,11 +1430,45 @@ class PlaybackLayer {
       if (now >= runtime.crackleNextTime) {
         const density = clampUnitPercent(crackle.density, 42) / 100;
         const depth = clampUnitPercent(crackle.depth, 78) / 100;
-        runtime.crackleGain = Math.random() < density ? 1 - depth * (0.35 + Math.random() * 0.65) : 1;
-        runtime.crackleNextTime = now + (1 / clampMomentarySpeedHz(crackle.speed, 14));
+        const noiseAmount = clampCrackleNoiseAmount(crackle.noise, 100) / 100;
+        const noiseDensity = clampUnitPercent(crackle.noiseDensity, 100) / 100;
+        const noiseFilterFrequency = clampCrackleNoiseFilterFrequency(crackle.noiseFilter, 12000);
+        const noiseFilterQ = clampCrackleNoiseFilterQ(crackle.noiseQ, 0.8);
+        const cycleSeconds = 1 / clampMomentarySpeedHz(crackle.speed, 14);
+        const hit = Math.random() < density;
+        if (hit) {
+          const severity = depth * (0.35 + Math.random() * 0.65);
+          const noiseLevel = Math.min(0.95, (0.02 + severity * 0.18) * (0.45 + density * 0.55) * noiseAmount);
+          const burstDuration = cycleSeconds * (0.08 + Math.random() * 0.2);
+          runtime.crackleGain = Math.max(0.025, 1 - severity);
+          if (Math.random() < noiseDensity) {
+            this.triggerCrackleNoiseBurst(
+              bus,
+              noiseLevel,
+              noiseFilterFrequency,
+              noiseFilterQ,
+              now,
+              burstDuration,
+            );
+          }
+        } else {
+          runtime.crackleGain = 1;
+          if (Math.random() < density * depth * noiseDensity * 0.08) {
+            this.triggerCrackleNoiseBurst(
+              bus,
+              (0.008 + depth * 0.055 * Math.random()) * noiseAmount,
+              noiseFilterFrequency,
+              noiseFilterQ,
+              now,
+              cycleSeconds * 0.08,
+            );
+          }
+        }
+        runtime.crackleNextTime = now + cycleSeconds;
       }
     } else {
       runtime.crackleGain = 1;
+      this.triggerCrackleNoiseBurst(bus, 0, 12000, 0.8, now);
     }
 
     let stutterGain = 1;
@@ -1423,8 +1521,12 @@ class PlaybackLayer {
       this.setMomentaryAudioParam(bus.momentaryPanOffset.offset, 0, now, 0.018);
     }
 
+    const crackleActive = isMomentaryEffectPerforming(trackIndex, "crackle");
+    const stutterActive = isMomentaryEffectPerforming(trackIndex, "stutter");
+    const glitchActive = isMomentaryEffectPerforming(trackIndex, "glitch");
     const gain = Math.max(0.0001, Math.min(1.25, runtime.crackleGain * stutterGain * runtime.glitchVolume));
-    this.setMomentaryAudioParam(bus.momentaryGain.gain, gain, now, isMomentaryEffectPerforming(trackIndex, "glitch") ? this.getGlitchGlideSeconds(trackIndex) : 0.008);
+    const gainGlide = glitchActive ? this.getGlitchGlideSeconds(trackIndex) : stutterActive ? 0.008 : crackleActive ? 0 : 0.008;
+    this.setMomentaryAudioParam(bus.momentaryGain.gain, gain, now, gainGlide);
   }
 
   createVoice({
@@ -3092,6 +3194,15 @@ function createMomentaryDirectionToggle(speedSettings) {
   return field;
 }
 
+function createMomentarySettingsGroup(title, controls) {
+  const group = document.createElement("section");
+  group.className = "momentary-settings-subgroup";
+  const heading = document.createElement("h4");
+  heading.textContent = title;
+  group.append(heading, ...controls);
+  return group;
+}
+
 function renderMomentaryEffectSettingsControls(effectKey) {
   const body = ui.momentaryEffectSettingsBody;
   if (!body) return;
@@ -3101,35 +3212,82 @@ function renderMomentaryEffectSettingsControls(effectKey) {
 
   if (effectKey === "crackle") {
     const crackle = getMomentaryEffectSettings(selection.trackIndex, "crackle");
+    const layout = document.createElement("div");
+    layout.className = "momentary-crackle-settings-layout";
+    layout.append(
+      createMomentarySettingsGroup("Crackle", [
+        createEffectSettingsSlider({
+          id: "momentary-effect-crackle-speed",
+          label: "Speed",
+          min: 0.5,
+          max: 40,
+          step: 0.5,
+          value: crackle.speed,
+          valueText: `${crackle.speed.toFixed(crackle.speed >= 10 ? 0 : 1)} Hz`,
+          onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { speed: Number(input.value) }),
+        }),
+        createEffectSettingsSlider({
+          id: "momentary-effect-crackle-density",
+          label: "Density",
+          min: 0,
+          max: 100,
+          value: Math.round(crackle.density),
+          valueText: `${Math.round(crackle.density)}%`,
+          onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { density: Number(input.value) }),
+        }),
+        createEffectSettingsSlider({
+          id: "momentary-effect-crackle-depth",
+          label: "Depth",
+          min: 0,
+          max: 100,
+          value: Math.round(crackle.depth),
+          valueText: `${Math.round(crackle.depth)}%`,
+          onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { depth: Number(input.value) }),
+        }),
+      ]),
+      createMomentarySettingsGroup("Noise", [
+        createEffectSettingsSlider({
+          id: "momentary-effect-crackle-noise",
+          label: "Level",
+          min: 0,
+          max: 400,
+          value: Math.round(crackle.noise),
+          valueText: `${Math.round(crackle.noise)}%`,
+          onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { noise: Number(input.value) }),
+        }),
+        createEffectSettingsSlider({
+          id: "momentary-effect-crackle-noise-density",
+          label: "Density",
+          min: 0,
+          max: 100,
+          value: Math.round(crackle.noiseDensity),
+          valueText: `${Math.round(crackle.noiseDensity)}%`,
+          onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { noiseDensity: Number(input.value) }),
+        }),
+        createEffectSettingsSlider({
+          id: "momentary-effect-crackle-noise-filter",
+          label: "Filter",
+          min: 1200,
+          max: 16000,
+          step: 100,
+          value: Math.round(crackle.noiseFilter),
+          valueText: formatFilterFrequency(crackle.noiseFilter),
+          onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { noiseFilter: Number(input.value) }),
+        }),
+        createEffectSettingsSlider({
+          id: "momentary-effect-crackle-noise-q",
+          label: "Q",
+          min: 0.1,
+          max: 12,
+          step: 0.1,
+          value: crackle.noiseQ,
+          valueText: crackle.noiseQ.toFixed(1),
+          onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { noiseQ: Number(input.value) }),
+        }),
+      ]),
+    );
     body.append(
-      createEffectSettingsSlider({
-        id: "momentary-effect-crackle-speed",
-        label: "Speed",
-        min: 0.5,
-        max: 40,
-        step: 0.5,
-        value: crackle.speed,
-        valueText: `${crackle.speed.toFixed(crackle.speed >= 10 ? 0 : 1)} Hz`,
-        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { speed: Number(input.value) }),
-      }),
-      createEffectSettingsSlider({
-        id: "momentary-effect-crackle-density",
-        label: "Density",
-        min: 0,
-        max: 100,
-        value: Math.round(crackle.density),
-        valueText: `${Math.round(crackle.density)}%`,
-        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { density: Number(input.value) }),
-      }),
-      createEffectSettingsSlider({
-        id: "momentary-effect-crackle-depth",
-        label: "Depth",
-        min: 0,
-        max: 100,
-        value: Math.round(crackle.depth),
-        valueText: `${Math.round(crackle.depth)}%`,
-        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "crackle", { depth: Number(input.value) }),
-      }),
+      layout,
     );
     return;
   }
@@ -3303,6 +3461,10 @@ function syncMomentaryEffectSettingsPanel() {
       ["speed", settings.speed, `${settings.speed.toFixed(settings.speed >= 10 ? 0 : 1)} Hz`],
       ["density", settings.density, `${Math.round(settings.density)}%`],
       ["depth", settings.depth, `${Math.round(settings.depth)}%`],
+      ["noise", settings.noise, `${Math.round(settings.noise)}%`],
+      ["noise-density", settings.noiseDensity, `${Math.round(settings.noiseDensity)}%`],
+      ["noise-filter", settings.noiseFilter, formatFilterFrequency(settings.noiseFilter)],
+      ["noise-q", settings.noiseQ, settings.noiseQ.toFixed(1)],
     ].forEach(([key, value, text]) => syncSliderValue(root, `#momentary-effect-crackle-${key}`, value, text));
   } else if (selection.effectKey === "stutter") {
     [
