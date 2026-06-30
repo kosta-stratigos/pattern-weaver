@@ -1022,6 +1022,18 @@ input[type="range"]::-webkit-slider-runnable-track {
   );
 }
 
+input[type="range"].bipolar-range::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.1) var(--range-fill-start, 50%),
+    var(--accent) var(--range-fill-start, 50%),
+    var(--accent-2) var(--range-fill-end, 50%),
+    rgba(255, 255, 255, 0.1) var(--range-fill-end, 50%),
+    rgba(255, 255, 255, 0.1) 100%
+  );
+}
+
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;

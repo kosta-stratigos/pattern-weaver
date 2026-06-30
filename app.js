@@ -259,7 +259,7 @@ const MOMENTARY_EFFECT_KEYS = ["crackle", "stutter", "speed", "glitch"];
 const MOMENTARY_EFFECT_LABELS = {
   crackle: "Crackle",
   stutter: "Stutter",
-  speed: "Speed",
+  speed: "Spin",
   glitch: "Glitch",
 };
 const MOMENTARY_EFFECT_HOTKEYS = {
@@ -312,6 +312,11 @@ function updateRangeFill(input) {
   const span = Math.max(1, max - min);
   const percent = ((value - min) / span) * 100;
   input.style.setProperty("--range-fill", `${percent}%`);
+  if (input.classList.contains("bipolar-range")) {
+    const centerPercent = ((0 - min) / span) * 100;
+    input.style.setProperty("--range-fill-start", `${Math.min(percent, centerPercent)}%`);
+    input.style.setProperty("--range-fill-end", `${Math.max(percent, centerPercent)}%`);
+  }
 }
 
 function refreshRangeFills(root = document) {
@@ -395,6 +400,97 @@ function clampMomentaryMs(value, min, max, fallback) {
 function clampMomentarySemitones(value, fallback = 12) {
   const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
   return Math.max(0, Math.min(24, Math.round(resolved)));
+}
+
+function clampMomentarySpinDirection(value, fallback = 0) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(-100, Math.min(100, resolved));
+}
+
+function clampMomentarySpinDrag(value, fallback = 45) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(0, Math.min(200, resolved));
+}
+
+function clampMomentarySpinRange(value, fallback = 100) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.max(0, Math.min(300, resolved));
+}
+
+function createDefaultMomentarySpinSettings() {
+  return {
+    direction: 0,
+    drag: 45,
+    range: 100,
+  };
+}
+
+function isLegacyMomentarySpeedSettings(source = {}) {
+  if (!source || typeof source !== "object") return false;
+  return typeof source.direction === "string" || "amount" in source || "easing" in source;
+}
+
+function getLegacyMomentarySpeedRangePercent(source = {}, fallback = createDefaultMomentarySpinSettings()) {
+  const sourceSettings = source && typeof source === "object" ? source : {};
+  const fallbackRange = clampMomentarySpinRange(fallback.range, 100);
+  if (!Number.isFinite(Number(sourceSettings.range))) return fallbackRange;
+  const semitones = clampMomentarySemitones(sourceSettings.range, 12);
+  return clampMomentarySpinRange((2 ** (semitones / 12)) * 100, fallbackRange);
+}
+
+function normalizeMomentarySpinSettings(source = {}, fallback = createDefaultMomentarySpinSettings()) {
+  const sourceSettings = source && typeof source === "object" ? source : {};
+  const fallbackSource = fallback && typeof fallback === "object" ? fallback : createDefaultMomentarySpinSettings();
+  const fallbackSettings = {
+    direction: clampMomentarySpinDirection(fallbackSource.direction, 0),
+    drag: clampMomentarySpinDrag(fallbackSource.drag ?? fallbackSource.easing, 45),
+    range: clampMomentarySpinRange(fallbackSource.range, 100),
+  };
+
+  if (isLegacyMomentarySpeedSettings(sourceSettings)) {
+    const legacySemitones = Number.isFinite(Number(sourceSettings.range))
+      ? clampMomentarySemitones(sourceSettings.range, 12)
+      : 12;
+    const amount = legacySemitones <= 0
+      ? 0
+      : clampUnitPercent(sourceSettings.amount, Math.abs(fallbackSettings.direction));
+    return {
+      direction: (sourceSettings.direction === "down" ? -1 : 1) * amount,
+      drag: clampMomentarySpinDrag(sourceSettings.easing, fallbackSettings.drag),
+      range: getLegacyMomentarySpeedRangePercent(sourceSettings, fallbackSettings),
+    };
+  }
+
+  return {
+    direction: clampMomentarySpinDirection(sourceSettings.direction, fallbackSettings.direction),
+    drag: clampMomentarySpinDrag(sourceSettings.drag, fallbackSettings.drag),
+    range: clampMomentarySpinRange(sourceSettings.range, fallbackSettings.range),
+  };
+}
+
+function getMomentarySpinSignedRateFromSettings(settings = createDefaultMomentarySpinSettings()) {
+  const direction = clampMomentarySpinDirection(settings.direction, 0) / 100;
+  const range = clampMomentarySpinRange(settings.range, 100) / 100;
+  if (Math.abs(direction) < 0.001) return 1;
+  if (direction < 0) return 1 + direction * (1 + range);
+  return 1 + direction * (range - 1);
+}
+
+function formatMomentarySpinDirection(direction, range) {
+  const value = clampMomentarySpinDirection(direction, 0);
+  if (Math.abs(value) < 0.5) return "Normal";
+  const rate = getMomentarySpinSignedRateFromSettings({ direction: value, range });
+  const percent = Math.round(Math.abs(rate) * 100);
+  return rate < 0 ? `Back ${percent}%` : `Fwd ${percent}%`;
+}
+
+function formatMomentarySpinDrag(value) {
+  const drag = Math.round(clampMomentarySpinDrag(value, 45));
+  return drag <= 0 ? "Snap" : `${drag}%`;
+}
+
+function formatMomentarySpinRange(value) {
+  return `${Math.round(clampMomentarySpinRange(value, 100))}%`;
 }
 
 function clampCrackleNoiseAmount(value, fallback = 100) {
@@ -515,12 +611,7 @@ function createDefaultMomentaryEffectSettings() {
       length: 52,
       cycleSpeed: 12,
     },
-    speed: {
-      direction: "up",
-      range: 12,
-      amount: 75,
-      easing: 50,
-    },
+    speed: createDefaultMomentarySpinSettings(),
     glitch: {
       speed: 7,
       pitch: 35,
@@ -734,12 +825,7 @@ function normalizeMomentaryEffectSettings(source = {}, fallback = createDefaultM
       length: clampUnitPercent(source.stutter?.length ?? fallback.stutter.length, fallback.stutter.length),
       cycleSpeed: clampMomentarySpeedHz(source.stutter?.cycleSpeed ?? fallback.stutter.cycleSpeed, fallback.stutter.cycleSpeed),
     },
-    speed: {
-      direction: source.speed?.direction === "down" ? "down" : "up",
-      range: clampMomentarySemitones(source.speed?.range ?? fallback.speed.range, fallback.speed.range),
-      amount: clampUnitPercent(source.speed?.amount ?? fallback.speed.amount, fallback.speed.amount),
-      easing: clampUnitPercent(source.speed?.easing ?? fallback.speed.easing, fallback.speed.easing),
-    },
+    speed: normalizeMomentarySpinSettings(source.speed, fallback.speed),
     glitch: {
       speed: clampMomentarySpeedHz(source.glitch?.speed ?? fallback.glitch.speed, fallback.glitch.speed),
       pitch: clampUnitPercent(source.glitch?.pitch ?? fallback.glitch.pitch, fallback.glitch.pitch),
@@ -1298,19 +1384,20 @@ class PlaybackLayer {
 
   getMomentarySpeedRampSeconds(trackIndex, active) {
     const speed = getMomentaryEffectSettings(trackIndex, "speed");
-    const easing = clampUnitPercent(speed.easing, 50) / 100;
-    const slow = 0.48;
-    const fast = 0.018;
-    if (active) return fast + (1 - easing) * (slow - fast);
-    return fast + easing * (slow - fast);
+    const drag = clampMomentarySpinDrag(speed.drag, 45) / 100;
+    const curve = drag ** 1.45;
+    const fast = 0.014;
+    const slow = active ? 0.16 : 0.72;
+    return fast + curve * (slow - fast);
+  }
+
+  getMomentarySpinSignedRate(trackIndex) {
+    if (!isMomentaryEffectPerforming(trackIndex, "speed")) return 1;
+    return getMomentarySpinSignedRateFromSettings(getMomentaryEffectSettings(trackIndex, "speed"));
   }
 
   getMomentarySpeedRatio(trackIndex) {
-    if (!isMomentaryEffectPerforming(trackIndex, "speed")) return 1;
-    const speed = getMomentaryEffectSettings(trackIndex, "speed");
-    const direction = speed.direction === "down" ? -1 : 1;
-    const semitones = direction * clampMomentarySemitones(speed.range, 12) * (clampUnitPercent(speed.amount, 75) / 100);
-    return 2 ** (semitones / 12);
+    return Math.max(0.001, Math.abs(this.getMomentarySpinSignedRate(trackIndex)));
   }
 
   getMomentaryPitchRatio(trackIndex) {
@@ -1539,7 +1626,9 @@ class PlaybackLayer {
     processing = null,
   }) {
     const baseBuffer = sampleLayer?.buffer;
-    const buffer = reverse ? sampleLayer?.reversedBuffer : baseBuffer;
+    const spinReverse = this.getMomentarySpinSignedRate(trackIndex) < 0;
+    const effectiveReverse = Boolean(reverse) !== spinReverse;
+    const buffer = effectiveReverse ? sampleLayer?.reversedBuffer : baseBuffer;
     if (!buffer) return false;
 
     const source = this.audioContext.createBufferSource();
@@ -1559,7 +1648,7 @@ class PlaybackLayer {
     const busInput = this.trackBuses?.[trackIndex]?.input ?? this.output;
     voiceGain.connect(busInput);
 
-    const intendedOffset = reverse ? buffer.duration - offset - safeDuration : offset;
+    const intendedOffset = effectiveReverse ? buffer.duration - offset - safeDuration : offset;
     const playbackOffset = Math.max(0, Math.min(maxOffset, intendedOffset));
     const baseStopTime = envelopeTiming.stopTime;
     const disconnectDelayMs = Math.ceil((baseStopTime - this.audioContext.currentTime + 0.1) * 1000);
@@ -1583,8 +1672,8 @@ class PlaybackLayer {
 
     if (loop) {
       source.loop = true;
-      const loopRegionStart = reverse ? buffer.duration - loopEnd : loopStart;
-      const loopRegionEnd = reverse ? buffer.duration - loopStart : loopEnd;
+      const loopRegionStart = effectiveReverse ? buffer.duration - loopEnd : loopStart;
+      const loopRegionEnd = effectiveReverse ? buffer.duration - loopStart : loopEnd;
       source.loopStart = Math.max(0, Math.min(buffer.duration - 0.01, loopRegionStart));
       source.loopEnd = Math.max(source.loopStart + 0.01, Math.min(buffer.duration, loopRegionEnd));
       source.start(when, playbackOffset);
@@ -2356,6 +2445,8 @@ const state = {
 
 const sampleCache = new Map();
 const momentaryHeldEffectKeys = new Set();
+const momentarySpinGestureTrackIndexes = new Set();
+const momentarySpinSnapAnimations = new Map();
 
 function getStepSelectionKey(trackIndex, cellIndex) {
   return `${trackIndex}:${cellIndex}`;
@@ -2873,7 +2964,10 @@ function isMomentaryEffectArmed(trackIndex, effectKey) {
 }
 
 function isMomentaryEffectPerforming(trackIndex, effectKey) {
-  return Boolean(state.momentaryEffects.active?.[effectKey] && isMomentaryEffectArmed(trackIndex, effectKey));
+  const gestureActive = effectKey === "speed"
+    && momentarySpinGestureTrackIndexes.has(trackIndex)
+    && Math.abs(clampMomentarySpinDirection(getMomentaryEffectSettings(trackIndex, "speed").direction, 0)) >= 0.5;
+  return Boolean((state.momentaryEffects.active?.[effectKey] || gestureActive) && isMomentaryEffectArmed(trackIndex, effectKey));
 }
 
 function selectPatternEffectSettings(trackIndex, effectKey) {
@@ -2889,7 +2983,20 @@ function selectPatternEffectSettings(trackIndex, effectKey) {
   writeStoredSession();
 }
 
-function createEffectSettingsSlider({ id, label, min, max, step = 1, value, valueText, onInput }) {
+function createEffectSettingsSlider({
+  id,
+  label,
+  min,
+  max,
+  step = 1,
+  value,
+  valueText,
+  inputClass = "",
+  onInput,
+  onChange = null,
+  onPointerDown = null,
+  onPointerUp = null,
+}) {
   const field = document.createElement("label");
   field.className = "compact-field";
   field.textContent = label;
@@ -2904,7 +3011,14 @@ function createEffectSettingsSlider({ id, label, min, max, step = 1, value, valu
   input.max = String(max);
   input.step = String(step);
   input.value = String(value);
-  input.addEventListener("input", () => onInput(input));
+  if (inputClass) input.className = inputClass;
+  input.addEventListener("input", () => onInput?.(input));
+  if (onChange) input.addEventListener("change", () => onChange(input));
+  if (onPointerDown) input.addEventListener("pointerdown", () => onPointerDown(input));
+  if (onPointerUp) {
+    input.addEventListener("pointerup", () => onPointerUp(input));
+    input.addEventListener("pointercancel", () => onPointerUp(input));
+  }
 
   const pill = document.createElement("span");
   pill.id = `${id}-value`;
@@ -3155,36 +3269,106 @@ function syncPatternEffectSettingsPanel() {
   refreshRangeFills(root);
 }
 
-function createMomentaryDirectionToggle(speedSettings) {
-  const field = document.createElement("div");
-  field.className = "compact-field";
-  const label = document.createElement("span");
-  label.textContent = "Direction";
+function cancelMomentarySpinSnap(trackIndex) {
+  const frameId = momentarySpinSnapAnimations.get(trackIndex);
+  if (frameId) window.cancelAnimationFrame(frameId);
+  momentarySpinSnapAnimations.delete(trackIndex);
+}
 
-  const group = document.createElement("div");
-  group.className = "voice-operation-button-group composer-toggle-group momentary-direction-toggle";
-  group.setAttribute("role", "group");
-  group.setAttribute("aria-label", "Speed direction");
+function beginMomentarySpinGesture(trackIndex) {
+  if (!state.tracks[trackIndex]) return;
+  cancelMomentarySpinSnap(trackIndex);
+  if (!momentarySpinGestureTrackIndexes.has(trackIndex)) {
+    momentarySpinGestureTrackIndexes.add(trackIndex);
+    updateMomentaryEffectsForTrack(trackIndex);
+    renderMomentaryEffectsMatrix();
+  }
+}
 
-  [
-    ["up", "Up"],
-    ["down", "Down"],
-  ].forEach(([direction, text]) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = text;
-    button.classList.toggle("active", speedSettings.direction === direction);
-    button.setAttribute("aria-pressed", String(speedSettings.direction === direction));
-    button.addEventListener("click", () => updateMomentaryEffectSettings(
-      getSelectedMomentaryEffectSettingsState().trackIndex,
-      "speed",
-      { direction },
-    ));
-    group.append(button);
+function endMomentarySpinGesture(trackIndex) {
+  if (!momentarySpinGestureTrackIndexes.has(trackIndex)) return;
+  momentarySpinGestureTrackIndexes.delete(trackIndex);
+  updateMomentaryEffectsForTrack(trackIndex);
+  renderMomentaryEffectsMatrix();
+}
+
+function updateMomentarySpinDirection(trackIndex, direction, { persist = false } = {}) {
+  if (!state.tracks[trackIndex]) return;
+  const current = getMomentaryTrackSettings(trackIndex);
+  current.speed = normalizeMomentarySpinSettings({ ...current.speed, direction }, current.speed);
+  state.momentaryEffects.settings[trackIndex] = normalizeMomentaryEffectSettings(current, current);
+  const rampSeconds = state.playback?.getMomentarySpeedRampSeconds(trackIndex, true) ?? 0.025;
+  state.playback?.applyMomentaryPitchForTrack(trackIndex, rampSeconds);
+  syncMomentaryEffectSettingsPanel();
+  if (persist) writeStoredSession();
+}
+
+function startMomentarySpinSnap(trackIndex) {
+  const speed = getMomentaryEffectSettings(trackIndex, "speed");
+  const startDirection = clampMomentarySpinDirection(speed.direction, 0);
+  const drag = clampMomentarySpinDrag(speed.drag, 45) / 100;
+  cancelMomentarySpinSnap(trackIndex);
+
+  if (Math.abs(startDirection) < 0.5) {
+    updateMomentarySpinDirection(trackIndex, 0, { persist: true });
+    endMomentarySpinGesture(trackIndex);
+    return;
+  }
+
+  const durationMs = 55 + (drag ** 1.45) * 1280;
+  const startTime = performance.now();
+  const tick = (now) => {
+    const progress = Math.min(1, (now - startTime) / durationMs);
+    const eased = 1 - ((1 - progress) ** 3);
+    const nextDirection = startDirection * (1 - eased);
+    updateMomentarySpinDirection(trackIndex, nextDirection, { persist: false });
+
+    if (progress < 1 && Math.abs(nextDirection) >= 0.35) {
+      const frameId = window.requestAnimationFrame(tick);
+      momentarySpinSnapAnimations.set(trackIndex, frameId);
+      return;
+    }
+
+    momentarySpinSnapAnimations.delete(trackIndex);
+    updateMomentarySpinDirection(trackIndex, 0, { persist: true });
+    endMomentarySpinGesture(trackIndex);
+  };
+
+  const frameId = window.requestAnimationFrame(tick);
+  momentarySpinSnapAnimations.set(trackIndex, frameId);
+}
+
+function releaseAllMomentarySpinGestures() {
+  const trackIndexes = new Set([
+    ...momentarySpinGestureTrackIndexes,
+    ...momentarySpinSnapAnimations.keys(),
+  ]);
+  trackIndexes.forEach((trackIndex) => {
+    cancelMomentarySpinSnap(trackIndex);
+    updateMomentarySpinDirection(trackIndex, 0, { persist: true });
+    endMomentarySpinGesture(trackIndex);
   });
+}
 
-  field.append(label, group);
-  return field;
+function createMomentarySpinDirectionSlider(speedSettings) {
+  return createEffectSettingsSlider({
+    id: "momentary-effect-speed-direction",
+    label: "Direction",
+    min: -100,
+    max: 100,
+    step: 1,
+    value: Math.round(clampMomentarySpinDirection(speedSettings.direction, 0)),
+    valueText: formatMomentarySpinDirection(speedSettings.direction, speedSettings.range),
+    inputClass: "bipolar-range momentary-spin-direction-slider",
+    onPointerDown: () => beginMomentarySpinGesture(getSelectedMomentaryEffectSettingsState().trackIndex),
+    onPointerUp: () => startMomentarySpinSnap(getSelectedMomentaryEffectSettingsState().trackIndex),
+    onInput: (input) => {
+      const trackIndex = getSelectedMomentaryEffectSettingsState().trackIndex;
+      beginMomentarySpinGesture(trackIndex);
+      updateMomentarySpinDirection(trackIndex, Number(input.value), { persist: false });
+    },
+    onChange: () => startMomentarySpinSnap(getSelectedMomentaryEffectSettingsState().trackIndex),
+  });
 }
 
 function createMomentarySettingsGroup(title, controls) {
@@ -3332,34 +3516,26 @@ function renderMomentaryEffectSettingsControls(effectKey) {
   if (effectKey === "speed") {
     const speed = getMomentaryEffectSettings(selection.trackIndex, "speed");
     body.append(
-      createMomentaryDirectionToggle(speed),
+      createMomentarySpinDirectionSlider(speed),
+      createEffectSettingsSlider({
+        id: "momentary-effect-speed-drag",
+        label: "Drag",
+        min: 0,
+        max: 200,
+        step: 1,
+        value: Math.round(speed.drag),
+        valueText: formatMomentarySpinDrag(speed.drag),
+        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "speed", { drag: Number(input.value) }),
+      }),
       createEffectSettingsSlider({
         id: "momentary-effect-speed-range",
         label: "Range",
         min: 0,
-        max: 24,
+        max: 300,
         step: 1,
         value: Math.round(speed.range),
-        valueText: `${Math.round(speed.range)} st`,
+        valueText: formatMomentarySpinRange(speed.range),
         onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "speed", { range: Number(input.value) }),
-      }),
-      createEffectSettingsSlider({
-        id: "momentary-effect-speed-amount",
-        label: "Pitch Mod",
-        min: 0,
-        max: 100,
-        value: Math.round(speed.amount),
-        valueText: `${Math.round(speed.amount)}%`,
-        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "speed", { amount: Number(input.value) }),
-      }),
-      createEffectSettingsSlider({
-        id: "momentary-effect-speed-easing",
-        label: "Easing",
-        min: 0,
-        max: 100,
-        value: Math.round(speed.easing),
-        valueText: `${Math.round(speed.easing)}%`,
-        onInput: (input) => updateMomentaryEffectSettings(getSelectedMomentaryEffectSettingsState().trackIndex, "speed", { easing: Number(input.value) }),
       }),
     );
     return;
@@ -3467,15 +3643,10 @@ function syncMomentaryEffectSettingsPanel() {
       ["cycle-speed", settings.cycleSpeed, `${settings.cycleSpeed.toFixed(settings.cycleSpeed >= 10 ? 0 : 1)} Hz`],
     ].forEach(([key, value, text]) => syncSliderValue(root, `#momentary-effect-stutter-${key}`, value, text));
   } else if (selection.effectKey === "speed") {
-    root.querySelectorAll(".momentary-direction-toggle button").forEach((button) => {
-      const isActive = button.textContent?.toLowerCase() === settings.direction;
-      button.classList.toggle("active", isActive);
-      button.setAttribute("aria-pressed", String(isActive));
-    });
     [
-      ["range", settings.range, `${Math.round(settings.range)} st`],
-      ["amount", settings.amount, `${Math.round(settings.amount)}%`],
-      ["easing", settings.easing, `${Math.round(settings.easing)}%`],
+      ["direction", Math.round(settings.direction), formatMomentarySpinDirection(settings.direction, settings.range)],
+      ["drag", settings.drag, formatMomentarySpinDrag(settings.drag)],
+      ["range", settings.range, formatMomentarySpinRange(settings.range)],
     ].forEach(([key, value, text]) => syncSliderValue(root, `#momentary-effect-speed-${key}`, value, text));
   } else if (selection.effectKey === "glitch") {
     [
@@ -8075,7 +8246,11 @@ function updateTrackSwell(trackIndex, patch) {
 
 function updateMomentaryEffectsForTrack(trackIndex) {
   state.playback?.updateMomentaryTrackBus(trackIndex);
-  state.playback?.applyMomentaryPitchForTrack(trackIndex);
+  const rampSeconds = state.playback?.getMomentarySpeedRampSeconds(
+    trackIndex,
+    isMomentaryEffectPerforming(trackIndex, "speed"),
+  ) ?? 0.025;
+  state.playback?.applyMomentaryPitchForTrack(trackIndex, rampSeconds);
 }
 
 function updateMomentaryEffectSettings(trackIndex, effectKey, patch) {
@@ -8784,6 +8959,7 @@ window.addEventListener("keyup", (event) => {
 
 window.addEventListener("blur", () => {
   momentaryHeldEffectKeys.clear();
+  releaseAllMomentarySpinGestures();
   releaseAllMomentaryEffects();
 });
 
