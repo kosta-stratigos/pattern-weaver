@@ -1455,11 +1455,14 @@ input[type="range"]::-moz-range-thumb {
   padding: 14px;
 }
 
+.pattern-settings-toolbar-group {
+  margin-bottom: 10px;
+}
+
 .pattern-settings-toolbar {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  margin-bottom: 10px;
 }
 
 #track-settings-track-select {

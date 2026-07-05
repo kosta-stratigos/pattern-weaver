@@ -482,25 +482,27 @@
             <section class="workspace-panel workspace-panel-patterns" data-workspace-panel="patterns">
               <div class="workspace-patterns-shell">
                 <div id="track-settings-group" class="control-group sequence-settings-group track-settings-panel-group">
-                  <div class="pattern-settings-toolbar">
-                    <label class="compact-field">
-                      Track
-                      <select id="track-settings-track-select"></select>
-                    </label>
-                    <label class="compact-field">
-                      Voice
-                      <select id="pattern-voice-select">
-                        <option value="0">Voice 1</option>
-                        <option value="1">Voice 2</option>
-                        <option value="2">Voice 3</option>
-                        <option value="3">Voice 4</option>
-                      </select>
-                    </label>
-                    <label class="compact-field">
-                      Pattern
-                      <select id="track-pattern-select"></select>
-                    </label>
-                  </div>
+                  <section class="control-group nested-control-group pattern-settings-toolbar-group" aria-label="Pattern selection">
+                    <div class="pattern-settings-toolbar">
+                      <label class="compact-field">
+                        Track
+                        <select id="track-settings-track-select"></select>
+                      </label>
+                      <label class="compact-field">
+                        Voice
+                        <select id="pattern-voice-select">
+                          <option value="0">Voice 1</option>
+                          <option value="1">Voice 2</option>
+                          <option value="2">Voice 3</option>
+                          <option value="3">Voice 4</option>
+                        </select>
+                      </label>
+                      <label class="compact-field">
+                        Pattern
+                        <select id="track-pattern-select"></select>
+                      </label>
+                    </div>
+                  </section>
                   <div class="sequence-settings-stack pattern-settings-stack">
                     <section class="control-group nested-control-group track-step-fill-group pattern-settings-sequencer" aria-labelledby="track-sequencer-title">
                       <div class="control-group-head">
