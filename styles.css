@@ -1794,7 +1794,12 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-settings-sequencer {
   grid-column: 1;
-  grid-row: 1 / span 2;
+  grid-row: 1;
+}
+
+.pattern-settings-playback {
+  grid-column: 1;
+  grid-row: 2;
 }
 
 .pattern-settings-fill-column {
@@ -1825,6 +1830,55 @@ input[type="range"]::-moz-range-thumb {
 .pattern-settings-envelope {
   grid-column: 3;
   grid-row: 1 / span 2;
+}
+
+.pattern-settings-playback > .track-settings-grid {
+  grid-template-columns: 1fr;
+}
+
+.pattern-variation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.pattern-variation-group {
+  min-width: 0;
+}
+
+.pattern-variation-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+}
+
+.pattern-variation-controls > .compact-field {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.pattern-variation-toggle-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.pattern-variation-toggle-group button {
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 4px;
+  font-size: 0.64rem;
+  white-space: normal;
+  line-height: 1.05;
+  text-align: center;
 }
 
 .pattern-settings-stack > .track-step-fill-group {
@@ -2296,12 +2350,27 @@ input[type="range"]::-moz-range-thumb {
   }
 
   .pattern-settings-sequencer,
+  .pattern-settings-playback,
   .pattern-settings-fill-column,
   .pattern-settings-step-fill,
   .pattern-settings-pitch-fill,
   .pattern-settings-envelope {
     grid-column: auto;
     grid-row: auto;
+  }
+
+  .pattern-settings-playback {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .pattern-settings-fill-column {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .pattern-settings-envelope {
+    grid-column: 1 / -1;
   }
 }
 
@@ -2320,6 +2389,12 @@ input[type="range"]::-moz-range-thumb {
   }
 
   .pattern-settings-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .pattern-settings-playback > .track-settings-grid,
+  .pattern-variation-grid,
+  .pattern-variation-controls {
     grid-template-columns: 1fr;
   }
 }

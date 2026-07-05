@@ -506,16 +506,9 @@
                   <div class="sequence-settings-stack pattern-settings-stack">
                     <section class="control-group nested-control-group track-step-fill-group pattern-settings-sequencer" aria-labelledby="track-sequencer-title">
                       <div class="control-group-head">
-                        <h3 id="track-sequencer-title">Sequencer</h3>
+                        <h3 id="track-sequencer-title">Length &amp; Subdivisions</h3>
                       </div>
                       <div class="control-grid track-settings-grid">
-                        <label class="compact-field">
-                          Steps / Bar
-                          <div class="slider-row">
-                            <input id="track-steps" type="range" min="1" max="32" value="16" />
-                            <span id="track-steps-value" class="value-pill">16</span>
-                          </div>
-                        </label>
                         <label class="compact-field">
                           Bars
                           <div class="slider-row">
@@ -524,7 +517,21 @@
                           </div>
                         </label>
                         <label class="compact-field">
-                          Playback Mode
+                          Steps / Bar
+                          <div class="slider-row">
+                            <input id="track-steps" type="range" min="1" max="32" value="16" />
+                            <span id="track-steps-value" class="value-pill">16</span>
+                          </div>
+                        </label>
+                      </div>
+                    </section>
+                    <section class="control-group nested-control-group track-step-fill-group pattern-settings-playback" aria-labelledby="track-playback-title">
+                      <div class="control-group-head">
+                        <h3 id="track-playback-title">Playback</h3>
+                      </div>
+                      <div class="control-grid track-settings-grid">
+                        <label class="compact-field">
+                          Playhead Mode
                           <select id="track-playback-mode">
                             <option value="forward">Forward</option>
                             <option value="ping-pong">Ping Pong</option>
@@ -533,12 +540,56 @@
                           </select>
                         </label>
                         <label class="compact-field">
-                          Step Probability
+                          Step Playback Probability
                           <div class="slider-row">
                             <input id="track-step-probability" type="range" min="0" max="100" value="100" />
                             <span id="track-step-probability-value" class="value-pill">100%</span>
                           </div>
                         </label>
+                      </div>
+                      <div class="pattern-variation-grid">
+                        <section class="control-group nested-control-group track-step-fill-group pattern-variation-group" aria-labelledby="track-step-variation-title">
+                          <div class="control-group-head">
+                            <h3 id="track-step-variation-title">Step Variation</h3>
+                          </div>
+                          <div class="pattern-variation-controls">
+                            <div class="compact-field">
+                              <div class="voice-operation-button-group composer-toggle-group pattern-variation-toggle-group" role="group" aria-label="Step variation lock mode">
+                                <button type="button" data-step-variation-lock="bar-one">Lock the 1</button>
+                                <button type="button" data-step-variation-lock="first-active">Lock 1st Active</button>
+                                <button type="button" data-step-variation-lock="none">No Lock</button>
+                              </div>
+                            </div>
+                            <label class="compact-field">
+                              Variation
+                              <div class="slider-row">
+                                <input id="track-step-variation-amount" type="range" min="0" max="100" value="0" />
+                                <span id="track-step-variation-amount-value" class="value-pill">0%</span>
+                              </div>
+                            </label>
+                          </div>
+                        </section>
+                        <section class="control-group nested-control-group track-step-fill-group pattern-variation-group" aria-labelledby="track-pitch-variation-title">
+                          <div class="control-group-head">
+                            <h3 id="track-pitch-variation-title">Pitch Variation</h3>
+                          </div>
+                          <div class="pattern-variation-controls">
+                            <div class="compact-field">
+                              <div class="voice-operation-button-group composer-toggle-group pattern-variation-toggle-group" role="group" aria-label="Pitch variation lock mode">
+                                <button type="button" data-pitch-variation-lock="bar-one">Lock the 1</button>
+                                <button type="button" data-pitch-variation-lock="first-active">Lock 1st Active</button>
+                                <button type="button" data-pitch-variation-lock="none">No Lock</button>
+                              </div>
+                            </div>
+                            <label class="compact-field">
+                              Variation
+                              <div class="slider-row">
+                                <input id="track-pitch-variation-amount" type="range" min="0" max="100" value="0" />
+                                <span id="track-pitch-variation-amount-value" class="value-pill">0%</span>
+                              </div>
+                            </label>
+                          </div>
+                        </section>
                       </div>
                     </section>
                     <div class="pattern-settings-fill-column">
