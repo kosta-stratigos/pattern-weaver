@@ -57,6 +57,19 @@ const ui = {
   chopBitDepthValue: document.querySelector("#chop-bit-depth-value"),
   chopWaveform: document.querySelector("#chop-waveform"),
   chopWaveformOverview: document.querySelector("#chop-waveform-overview"),
+  grainFilterType: document.querySelector("#grain-filter-type"),
+  grainFilterFrequency: document.querySelector("#grain-filter-frequency"),
+  grainFilterFrequencyValue: document.querySelector("#grain-filter-frequency-value"),
+  grainFilterQ: document.querySelector("#grain-filter-q"),
+  grainFilterQValue: document.querySelector("#grain-filter-q-value"),
+  grainAmplitude: document.querySelector("#grain-amplitude"),
+  grainAmplitudeValue: document.querySelector("#grain-amplitude-value"),
+  grainSampleRateReduction: document.querySelector("#grain-sample-rate-reduction"),
+  grainSampleRateReductionValue: document.querySelector("#grain-sample-rate-reduction-value"),
+  grainBitDepth: document.querySelector("#grain-bit-depth"),
+  grainBitDepthValue: document.querySelector("#grain-bit-depth-value"),
+  grainWaveform: document.querySelector("#grain-waveform"),
+  grainWaveformOverview: document.querySelector("#grain-waveform-overview"),
   synthSettingsGroup: document.querySelector("#synth-settings-group"),
   workspaceTabs: Array.from(document.querySelectorAll("[data-workspace-tab]")),
   workspacePanels: Array.from(document.querySelectorAll("[data-workspace-panel]")),
@@ -89,19 +102,21 @@ const ui = {
   voicePlacementField: document.querySelector("#voice-placement-field"),
   voicePlacement: document.querySelector("#voice-placement"),
   voicePlacementValue: document.querySelector("#voice-placement-value"),
-  voicePlaybackMode: document.querySelector("#voice-playback-mode"),
+  grainReverseToggle: document.querySelector("#grain-reverse-toggle"),
+  grainUseNotePitchToggle: document.querySelector("#grain-use-note-pitch-toggle"),
+  grainPlayOneShot: document.querySelector("#grain-play-one-shot"),
+  grainPlayLoop: document.querySelector("#grain-play-loop"),
   voicePitchField: document.querySelector("#voice-pitch-field"),
+  grainCount: document.querySelector("#grain-count"),
+  grainCountValue: document.querySelector("#grain-count-value"),
   grainSize: document.querySelector("#grain-size"),
   grainSizeValue: document.querySelector("#grain-size-value"),
-  grainDensity: document.querySelector("#grain-density"),
-  grainDensityValue: document.querySelector("#grain-density-value"),
-  spray: document.querySelector("#spray"),
-  sprayValue: document.querySelector("#spray-value"),
+  grainFocus: document.querySelector("#grain-focus"),
+  grainFocusValue: document.querySelector("#grain-focus-value"),
+  grainStereoSpread: document.querySelector("#grain-stereo-spread"),
+  grainStereoSpreadValue: document.querySelector("#grain-stereo-spread-value"),
   pitch: document.querySelector("#pitch"),
   pitchValue: document.querySelector("#pitch-value"),
-  chopGate: document.querySelector("#chop-gate"),
-  chopGateValue: document.querySelector("#chop-gate-value"),
-  reverse: document.querySelector("#reverse"),
   synthWave: document.querySelector("#synth-wave"),
   synthWaveShape: document.querySelector("#synth-wave-shape"),
   synthWaveShapeValue: document.querySelector("#synth-wave-shape-value"),
@@ -1476,6 +1491,19 @@ class PlaybackLayer {
     bus.activeVoices?.forEach((handle) => handle.setPitchRatio?.(ratio, rampSeconds));
   }
 
+  updateActiveTrackVoiceProcessing(trackIndex, processing, rampSeconds = 0.025) {
+    const bus = this.trackBuses?.[trackIndex];
+    if (!bus) return;
+    bus.activeVoices?.forEach((handle) => handle.setProcessing?.(processing, rampSeconds));
+  }
+
+  updateActiveTrackGrainStereoSpread(trackIndex, stereoSpread, rampSeconds = 0.025) {
+    const bus = this.trackBuses?.[trackIndex];
+    if (!bus) return;
+    const spreadAmount = Math.max(0, Math.min(100, Number(stereoSpread) || 0)) / 100;
+    bus.activeVoices?.forEach((handle) => handle.setStereoSpread?.(spreadAmount, rampSeconds));
+  }
+
   registerActiveVoice(trackIndex, handle) {
     const bus = this.trackBuses?.[trackIndex];
     if (!bus || !handle) return handle;
@@ -1651,6 +1679,10 @@ class PlaybackLayer {
     envelope = createDefaultTrackEnvelope(),
     sampleLayer = this.sampleLayer,
     processing = null,
+    liveProcessing = false,
+    pan = 0,
+    panDirection = 0,
+    voiceIndex = null,
   }) {
     const baseBuffer = sampleLayer?.buffer;
     const spinReverse = this.getMomentarySpinSignedRate(trackIndex) < 0;
@@ -1669,25 +1701,59 @@ class PlaybackLayer {
     const gateDuration = loop ? Math.max(safeDuration, sustainDuration ?? safeDuration) : Math.max(safeDuration, sustainDuration ?? safeDuration);
     const envelopeTiming = applyTrackEnvelopeToGain(voiceGain.gain, when, gateDuration, envelope, 0.75 * level);
 
-    const processingNodes = this.createSampleProcessingNodes(processing);
+    const processingNodes = this.createSampleProcessingNodes(processing, { allowLiveReduction: liveProcessing });
+    const panValue = clampPan(pan);
+    const panSide = Math.sign(clampPan(panDirection));
+    const voicePan = Math.abs(panValue) > 0.001 || panSide !== 0 ? this.audioContext.createStereoPanner() : null;
     source.connect(processingNodes.input);
     processingNodes.output.connect(voiceGain);
     const busInput = this.trackBuses?.[trackIndex]?.input ?? this.output;
-    voiceGain.connect(busInput);
+    if (voicePan) {
+      voicePan.pan.setValueAtTime(panValue, when);
+      voiceGain.connect(voicePan);
+      voicePan.connect(busInput);
+    } else {
+      voiceGain.connect(busInput);
+    }
 
     const intendedOffset = effectiveReverse ? buffer.duration - offset - safeDuration : offset;
     const playbackOffset = Math.max(0, Math.min(maxOffset, intendedOffset));
     const baseStopTime = envelopeTiming.stopTime;
     const disconnectDelayMs = Math.ceil((baseStopTime - this.audioContext.currentTime + 0.1) * 1000);
+    const getLiveVoice = () => {
+      if (!Number.isInteger(voiceIndex)) return null;
+      return this.state.voices?.[Math.max(0, Math.min(TRACK_COUNT - 1, voiceIndex))] ?? null;
+    };
+    const applyLiveVoiceSettings = (rampSeconds = 0.006) => {
+      const liveVoice = getLiveVoice();
+      if (!liveVoice) return;
+      processingNodes.update?.(getVoiceSampleProcessing(liveVoice), rampSeconds);
+      if (voicePan && panSide !== 0 && liveVoice.mode === "granular") {
+        const spreadAmount = Math.max(0, Math.min(100, Number(liveVoice.grainStereoSpread) || 0)) / 100;
+        this.setMomentaryAudioParam(voicePan.pan, clampPan(panSide * spreadAmount), this.audioContext.currentTime, rampSeconds);
+      }
+    };
+    const liveUpdateDelayMs = Math.max(0, Math.floor((when - this.audioContext.currentTime - 0.006) * 1000));
+    const liveUpdateId = (liveProcessing || panSide !== 0) && Number.isInteger(voiceIndex)
+      ? window.setTimeout(() => applyLiveVoiceSettings(0.003), liveUpdateDelayMs)
+      : null;
 
     let stopped = false;
     const handle = this.registerActiveVoice(trackIndex, {
       setPitchRatio: (ratio, rampSeconds = 0.025) => {
         this.setMomentaryAudioParam(source.playbackRate, rate * ratio, this.audioContext.currentTime, rampSeconds);
       },
+      setProcessing: (nextProcessing, rampSeconds = 0.025) => {
+        processingNodes.update?.(nextProcessing, rampSeconds);
+      },
+      setStereoSpread: (spreadAmount, rampSeconds = 0.025) => {
+        if (!voicePan || panSide === 0) return;
+        this.setMomentaryAudioParam(voicePan.pan, clampPan(panSide * spreadAmount), this.audioContext.currentTime, rampSeconds);
+      },
       stop: (stopWhen = this.audioContext.currentTime) => {
         if (stopped) return;
         stopped = true;
+        if (liveUpdateId !== null) window.clearTimeout(liveUpdateId);
         try {
           voiceGain.gain.cancelScheduledValues(stopWhen);
           voiceGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
@@ -1709,6 +1775,8 @@ class PlaybackLayer {
         source.disconnect?.();
         processingNodes.disconnect();
         voiceGain.disconnect?.();
+        voicePan?.disconnect?.();
+        if (liveUpdateId !== null) window.clearTimeout(liveUpdateId);
         this.unregisterActiveVoice(trackIndex, handle);
       }, Math.max(0, disconnectDelayMs));
       return handle;
@@ -1719,64 +1787,85 @@ class PlaybackLayer {
       source.disconnect?.();
       processingNodes.disconnect();
       voiceGain.disconnect?.();
+      voicePan?.disconnect?.();
+      if (liveUpdateId !== null) window.clearTimeout(liveUpdateId);
       this.unregisterActiveVoice(trackIndex, handle);
     }, Math.max(0, disconnectDelayMs));
     return handle;
   }
 
-  createSampleProcessingNodes(processing = null) {
+  createSampleProcessingNodes(processing = null, { allowLiveReduction = false } = {}) {
     const input = this.audioContext.createGain();
     const makeupGain = this.audioContext.createGain();
     const filterNode = this.audioContext.createBiquadFilter();
-    const reductionNode = this.createSampleReductionNode(processing);
+    const filterDryGain = this.audioContext.createGain();
+    const filterWetGain = this.audioContext.createGain();
+    const reduction = this.createSampleReductionNode(processing, { force: allowLiveReduction });
     const output = this.audioContext.createGain();
-    const amplitude = clampChopAmplitude(processing?.amplitude ?? 100, 100) / 100;
-    const filterFrequency = clampFilterFrequency(processing?.filterFrequency ?? 16000);
-    const filterQ = clampFilterQ(processing?.filterQ ?? 0.8);
-    const useFilter = filterFrequency < 15999 || filterQ > 0.81 || (processing?.filterType && processing.filterType !== "lowpass");
 
-    makeupGain.gain.setValueAtTime(amplitude, this.audioContext.currentTime);
-    let stage = input;
-
-    if (reductionNode) {
-      stage.connect(reductionNode);
-      stage = reductionNode;
-    }
-
-    if (useFilter) {
-      filterNode.type = FILTER_TYPES.includes(processing?.filterType) ? processing.filterType : "lowpass";
-      filterNode.frequency.setValueAtTime(filterFrequency, this.audioContext.currentTime);
-      filterNode.Q.setValueAtTime(filterQ, this.audioContext.currentTime);
-      stage.connect(filterNode);
-      stage = filterNode;
-    }
-
-    stage.connect(makeupGain);
+    const processingSource = reduction?.node ?? input;
+    if (reduction) input.connect(reduction.node);
+    processingSource.connect(filterDryGain);
+    filterDryGain.connect(makeupGain);
+    processingSource.connect(filterNode);
+    filterNode.connect(filterWetGain);
+    filterWetGain.connect(makeupGain);
     makeupGain.connect(output);
+
+    const update = (nextProcessing = null, rampSeconds = 0) => {
+      const now = this.audioContext.currentTime;
+      const amplitude = clampChopAmplitude(nextProcessing?.amplitude ?? 100, 100) / 100;
+      const filterFrequency = clampFilterFrequency(nextProcessing?.filterFrequency ?? 16000);
+      const filterQ = clampFilterQ(nextProcessing?.filterQ ?? 0.8);
+      const useFilter = filterFrequency < 15999 || filterQ > 0.81 || (nextProcessing?.filterType && nextProcessing.filterType !== "lowpass");
+
+      filterNode.type = FILTER_TYPES.includes(nextProcessing?.filterType) ? nextProcessing.filterType : "lowpass";
+      this.setMomentaryAudioParam(filterNode.frequency, filterFrequency, now, rampSeconds);
+      this.setMomentaryAudioParam(filterNode.Q, filterQ, now, rampSeconds);
+      this.setMomentaryAudioParam(filterDryGain.gain, useFilter ? 0 : 1, now, rampSeconds);
+      this.setMomentaryAudioParam(filterWetGain.gain, useFilter ? 1 : 0, now, rampSeconds);
+      this.setMomentaryAudioParam(makeupGain.gain, amplitude, now, rampSeconds);
+      reduction?.update(nextProcessing);
+    };
+
+    update(processing, 0);
 
     return {
       input,
       output,
+      update,
       disconnect: () => {
         input.disconnect?.();
         makeupGain.disconnect?.();
         filterNode.disconnect?.();
-        reductionNode?.disconnect?.();
+        filterDryGain.disconnect?.();
+        filterWetGain.disconnect?.();
+        reduction?.disconnect?.();
         output.disconnect?.();
       },
     };
   }
 
-  createSampleReductionNode(processing = null) {
-    const sampleRateReduction = clampChopSampleRateReduction(processing?.sampleRateReduction ?? 0);
-    const bitDepth = clampChopBitDepth(processing?.bitDepth ?? 16);
-    if (sampleRateReduction <= 0 && bitDepth >= 16) return null;
+  createSampleReductionNode(processing = null, { force = false } = {}) {
+    const initialSampleRateReduction = clampChopSampleRateReduction(processing?.sampleRateReduction ?? 0);
+    const initialBitDepth = clampChopBitDepth(processing?.bitDepth ?? 16);
+    if (!force && initialSampleRateReduction <= 0 && initialBitDepth >= 16) return null;
 
     const node = this.audioContext.createScriptProcessor(512, 2, 2);
-    const step = 2 / ((2 ** bitDepth) - 1);
-    const holdSamples = Math.max(1, Math.round(1 + (sampleRateReduction / 100) * 31));
+    const reductionState = {
+      sampleRateReduction: 0,
+      bitDepth: 16,
+      step: 2 / ((2 ** 16) - 1),
+      holdSamples: 1,
+    };
     const heldSamples = [0, 0];
     const holdIndexes = [0, 0];
+    const update = (nextProcessing = null) => {
+      reductionState.sampleRateReduction = clampChopSampleRateReduction(nextProcessing?.sampleRateReduction ?? 0);
+      reductionState.bitDepth = clampChopBitDepth(nextProcessing?.bitDepth ?? 16);
+      reductionState.step = 2 / ((2 ** reductionState.bitDepth) - 1);
+      reductionState.holdSamples = Math.max(1, Math.round(1 + (reductionState.sampleRateReduction / 100) * 31));
+    };
 
     node.onaudioprocess = (event) => {
       const inputChannelCount = event.inputBuffer.numberOfChannels;
@@ -1784,10 +1873,16 @@ class PlaybackLayer {
       for (let channel = 0; channel < outputChannelCount; channel += 1) {
         const input = event.inputBuffer.getChannelData(Math.min(channel, inputChannelCount - 1));
         const output = event.outputBuffer.getChannelData(channel);
+        if (reductionState.sampleRateReduction <= 0 && reductionState.bitDepth >= 16) {
+          output.set(input);
+          heldSamples[channel] = 0;
+          holdIndexes[channel] = 0;
+          continue;
+        }
         for (let index = 0; index < output.length; index += 1) {
           if (holdIndexes[channel] <= 0) {
-            heldSamples[channel] = Math.round(input[index] / step) * step;
-            holdIndexes[channel] = holdSamples;
+            heldSamples[channel] = Math.round(input[index] / reductionState.step) * reductionState.step;
+            holdIndexes[channel] = reductionState.holdSamples;
           }
           output[index] = Math.max(-1, Math.min(1, heldSamples[channel]));
           holdIndexes[channel] -= 1;
@@ -1795,7 +1890,12 @@ class PlaybackLayer {
       }
     };
 
-    return node;
+    update(processing);
+    return {
+      node,
+      update,
+      disconnect: () => node.disconnect?.(),
+    };
   }
 
   triggerGranular(settings, when = this.audioContext.currentTime, sliceIndex = null, noteDuration = 0.1) {
@@ -1803,55 +1903,52 @@ class PlaybackLayer {
     const buffer = sampleLayer?.buffer;
     if (!buffer) return false;
 
-    const { startTime, endTime } = sampleLayer.getRegionBounds();
+    const { startTime, endTime, duration: regionDuration } = getSampleRegionBoundsForSource(settings, sampleLayer);
+    if (regionDuration <= 0) return false;
     const rate = 2 ** (settings.pitch / 12);
-    const regionDuration = Math.max(0.02, endTime - startTime);
-    const grainDuration = Math.min(settings.grainSizeMs / 1000, regionDuration);
-    const grainCount = Math.max(1, Math.round(settings.density * 0.35));
-    const slices = sampleLayer.getSlices(settings.sliceCount);
+    const grainDuration = Math.min(Math.max(0.001, Number(settings.grainSizeMs || 40) / 1000), regionDuration);
+    const grainCount = Math.max(1, Math.min(12, Math.round(Number(settings.grainCount) || 1)));
+    const focusUpperMs = Math.max(1, Math.min(100, Number(settings.focusMs) || 1));
+    const spreadAmount = Math.max(0, Math.min(100, Number(settings.stereoSpread) || 0)) / 100;
+    const slices = getSampleRegionSlices(startTime, endTime, settings.sliceCount);
     const resolvedSliceIndex = sliceIndex
       ?? (settings.grainLocation === "random" && slices.length ? Math.floor(Math.random() * slices.length) : 0);
     const anchorSlice = slices.length ? slices[resolvedSliceIndex % slices.length] : null;
-    const fixedStart = startTime + Math.max(0, regionDuration - grainDuration) * ((settings.voicePlacement ?? 50) / 100);
-    const sliceStart = settings.grainLocation === "fixed" ? fixedStart : (anchorSlice?.start ?? startTime);
-    const sliceEnd = settings.grainLocation === "fixed" ? Math.min(endTime, sliceStart + grainDuration) : (anchorSlice ? anchorSlice.start + anchorSlice.duration : endTime);
-    const maxPosition = Math.max(sliceStart, Math.min(endTime - grainDuration, sliceEnd - grainDuration));
-    const loopPosition = Math.max(startTime, Math.min(maxPosition, sliceStart));
-
-    if (settings.voicePlaybackMode && settings.voicePlaybackMode !== "one-shot") {
-      return this.createVoice({
-        trackIndex: settings.trackIndex,
-        when,
-        offset: Math.max(0, loopPosition),
-        duration: Math.min(grainDuration, buffer.duration - loopPosition),
-        rate,
-        reverse: settings.reverse,
-        level: settings.level ?? 1,
-        loop: true,
-        loopStart: loopPosition,
-        loopEnd: Math.min(endTime, loopPosition + grainDuration),
-        sustainDuration: Math.max(grainDuration, noteDuration),
-        envelope: settings.envelope,
-        sampleLayer,
-      });
-    }
+    const maxPosition = Math.max(startTime, endTime - grainDuration);
+    const fixedPosition = startTime + Math.max(0, maxPosition - startTime) * ((settings.voicePlacement ?? 50) / 100);
+    const slicePosition = anchorSlice
+      ? Math.max(startTime, Math.min(maxPosition, anchorSlice.start))
+      : startTime;
+    const basePosition = settings.grainLocation === "fixed" ? fixedPosition : slicePosition;
+    const loop = settings.voicePlaybackMode && settings.voicePlaybackMode !== "one-shot";
 
     let triggered = false;
     for (let index = 0; index < grainCount; index += 1) {
-      const jitter = settings.grainLocation === "fixed" ? 0 : (Math.random() * 2 - 1) * settings.spray;
-      const position = Math.max(startTime, Math.min(maxPosition, sliceStart + jitter));
+      const focusMs = 1 + Math.random() * Math.max(0, focusUpperMs - 1);
+      const focusSign = index % 2 === 0 ? -1 : 1;
+      const position = Math.max(startTime, Math.min(maxPosition, basePosition + (focusSign * focusMs) / 1000));
+      const panDirection = index % 2 === 0 ? -1 : 1;
+      const pan = spreadAmount <= 0 ? 0 : panDirection * spreadAmount;
       triggered =
         this.createVoice({
           trackIndex: settings.trackIndex,
-          when: when + index * (1 / Math.max(1, settings.density)),
+          when,
           offset: Math.max(0, position),
           duration: Math.min(grainDuration, buffer.duration - position),
           rate,
           reverse: settings.reverse,
           level: settings.level ?? 1,
+          loop,
+          loopStart: position,
+          loopEnd: Math.min(endTime, position + grainDuration),
           sustainDuration: Math.max(grainDuration, noteDuration),
           envelope: settings.envelope,
           sampleLayer,
+          processing: settings.processing,
+          liveProcessing: true,
+          pan,
+          panDirection,
+          voiceIndex: settings.voiceIndex,
         }) || triggered;
     }
 
@@ -1893,6 +1990,8 @@ class PlaybackLayer {
         sampleRateReduction: voice.chopSampleRateReduction,
         bitDepth: voice.chopBitDepth,
       },
+      liveProcessing: true,
+      voiceIndex,
     });
     if (handle) {
       this.state.chopPlayheadPositions[voiceIndex] = window.playhead;
@@ -2063,11 +2162,13 @@ class PlaybackLayer {
       return this.triggerGranular(
         {
           trackIndex: playbackTrack.trackIndex,
+          voiceIndex: playbackTrack.voiceIndex,
           sampleLayer: getVoiceSampleLayer(playbackTrack.voiceIndex),
+          grainCount: playbackTrack.grainCount,
           grainSizeMs: playbackTrack.grainSize,
-          density: playbackTrack.grainDensity,
-          spray: playbackTrack.spray / 100,
-          pitch: pitchOverride?.pitchSemitones ?? playbackTrack.pitch,
+          focusMs: playbackTrack.grainFocus,
+          stereoSpread: playbackTrack.grainStereoSpread,
+          pitch: playbackTrack.pitch + (playbackTrack.grainUseNotePitch ? (pitchOverride?.pitchSemitones ?? 0) : 0),
           reverse: playbackTrack.reverse,
           level: 1,
           sliceCount: playbackTrack.sliceCount,
@@ -2075,6 +2176,9 @@ class PlaybackLayer {
           voicePlacement: playbackTrack.voicePlacement,
           voicePlaybackMode: playbackTrack.voicePlaybackMode,
           envelope: playbackTrack.envelope,
+          sampleRegionStart: playbackTrack.sampleRegionStart,
+          sampleRegionEnd: playbackTrack.sampleRegionEnd,
+          processing: getVoiceSampleProcessing(playbackTrack),
         },
         when,
         sliceIndex,
@@ -2111,11 +2215,13 @@ class PlaybackLayer {
       return this.triggerGranular(
         {
           trackIndex: playbackTrack.trackIndex,
+          voiceIndex: playbackTrack.voiceIndex,
           sampleLayer: getVoiceSampleLayer(playbackTrack.voiceIndex),
+          grainCount: playbackTrack.grainCount,
           grainSizeMs: playbackTrack.grainSize,
-          density: playbackTrack.grainDensity,
-          spray: playbackTrack.spray / 100,
-          pitch: pitchOverride?.pitchSemitones ?? playbackTrack.pitch,
+          focusMs: playbackTrack.grainFocus,
+          stereoSpread: playbackTrack.grainStereoSpread,
+          pitch: playbackTrack.pitch + (playbackTrack.grainUseNotePitch ? (pitchOverride?.pitchSemitones ?? 0) : 0),
           reverse: playbackTrack.reverse,
           level: 1,
           sliceCount: playbackTrack.sliceCount,
@@ -2123,6 +2229,9 @@ class PlaybackLayer {
           voicePlacement: playbackTrack.voicePlacement,
           voicePlaybackMode: "loop",
           envelope: normalizeTrackEnvelope({ ...playbackTrack.envelope, sustain: 100, release: 120 }, playbackTrack.envelope),
+          sampleRegionStart: playbackTrack.sampleRegionStart,
+          sampleRegionEnd: playbackTrack.sampleRegionEnd,
+          processing: getVoiceSampleProcessing(playbackTrack),
         },
         when,
         sliceIndex,
@@ -2336,7 +2445,11 @@ function createVoiceConfig(id) {
     grainLocation: "fixed",
     voicePlacement: 50,
     voicePlaybackMode: "one-shot",
-    grainSize: 110,
+    grainCount: 4,
+    grainSize: 40,
+    grainFocus: 18,
+    grainStereoSpread: 0,
+    grainUseNotePitch: true,
     grainDensity: 12,
     spray: 18,
     pitch: 0,
@@ -4228,7 +4341,11 @@ function serializeVoice(voice) {
     grainLocation: voice.grainLocation,
     voicePlacement: voice.voicePlacement,
     voicePlaybackMode: voice.voicePlaybackMode,
+    grainCount: voice.grainCount,
     grainSize: voice.grainSize,
+    grainFocus: voice.grainFocus,
+    grainStereoSpread: voice.grainStereoSpread,
+    grainUseNotePitch: voice.grainUseNotePitch,
     grainDensity: voice.grainDensity,
     spray: voice.spray,
     pitch: voice.pitch,
@@ -4260,6 +4377,10 @@ function serializeVoice(voice) {
 
 function normalizeVoice(index, source = {}) {
   const fallback = createVoiceConfig(index + 1);
+  const legacyGrainCount = Number.isFinite(Number(source.grainDensity))
+    ? Math.max(1, Math.min(12, Math.round(Number(source.grainDensity) * 0.35)))
+    : fallback.grainCount;
+  const grainPlaybackMode = source.voicePlaybackMode === "smooth-loop" ? "loop" : source.voicePlaybackMode;
   return {
     ...fallback,
     name: normalizeVoiceName(source.name, fallback.name),
@@ -4272,8 +4393,12 @@ function normalizeVoice(index, source = {}) {
     reverse: Boolean(source.reverse),
     grainLocation: ["fixed", "sequential", "sweep", "random"].includes(source.grainLocation) ? source.grainLocation : fallback.grainLocation,
     voicePlacement: clampNumber(source.voicePlacement, 0, 100, fallback.voicePlacement),
-    voicePlaybackMode: ["one-shot", "loop", "smooth-loop"].includes(source.voicePlaybackMode) ? source.voicePlaybackMode : fallback.voicePlaybackMode,
-    grainSize: clampNumber(source.grainSize, 20, 350, fallback.grainSize),
+    voicePlaybackMode: ["one-shot", "loop"].includes(grainPlaybackMode) ? grainPlaybackMode : fallback.voicePlaybackMode,
+    grainCount: Math.round(clampNumber(source.grainCount ?? legacyGrainCount, 1, 12, fallback.grainCount)),
+    grainSize: Math.round(clampNumber(source.grainSize, 1, 100, fallback.grainSize)),
+    grainFocus: Math.round(clampNumber(source.grainFocus ?? source.spray, 1, 100, fallback.grainFocus)),
+    grainStereoSpread: Math.round(clampNumber(source.grainStereoSpread, 0, 100, fallback.grainStereoSpread)),
+    grainUseNotePitch: source.grainUseNotePitch == null ? fallback.grainUseNotePitch : Boolean(source.grainUseNotePitch),
     grainDensity: clampNumber(source.grainDensity, 2, 40, fallback.grainDensity),
     spray: clampNumber(source.spray, 0, 100, fallback.spray),
     pitch: clampNumber(source.pitch, -24, 24, fallback.pitch),
@@ -4483,7 +4608,11 @@ function applyStoredSession(snapshot = readStoredSession()) {
         grainLocation: stored.controls?.grainLocation,
         voicePlacement: stored.controls?.voicePlacement,
         voicePlaybackMode: stored.controls?.voicePlaybackMode,
+        grainCount: stored.controls?.grainCount,
         grainSize: stored.controls?.grainSize,
+        grainFocus: stored.controls?.grainFocus,
+        grainStereoSpread: stored.controls?.grainStereoSpread,
+        grainUseNotePitch: stored.controls?.grainUseNotePitch,
         grainDensity: stored.controls?.grainDensity,
         spray: stored.controls?.spray,
         pitch: stored.controls?.pitch,
@@ -5411,7 +5540,11 @@ function getTrackPlaybackSettings(track) {
     grainLocation: voice.grainLocation,
     voicePlacement: voice.voicePlacement,
     voicePlaybackMode: voice.voicePlaybackMode,
+    grainCount: voice.grainCount,
     grainSize: voice.grainSize,
+    grainFocus: voice.grainFocus,
+    grainStereoSpread: voice.grainStereoSpread,
+    grainUseNotePitch: voice.grainUseNotePitch,
     grainDensity: voice.grainDensity,
     spray: voice.spray,
     pitch: voice.pitch,
@@ -5780,11 +5913,87 @@ function resolvePlaybackSliceIndex(track, { advance = false } = {}) {
   return index;
 }
 
+function getSampleRegionBoundsForSource(source = {}, sampleLayer = state.sample) {
+  if (!sampleLayer?.buffer) return { startTime: 0, endTime: 0, duration: 0 };
+  const sourceStart = Number.isFinite(Number(source.sampleRegionStart)) ? Number(source.sampleRegionStart) : sampleLayer.regionStart;
+  const sourceEnd = Number.isFinite(Number(source.sampleRegionEnd)) ? Number(source.sampleRegionEnd) : sampleLayer.regionEnd;
+  const start = Math.max(0, Math.min(0.99, sourceStart ?? 0));
+  const end = Math.max(start + 0.01, Math.min(1, sourceEnd ?? 1));
+  const startTime = sampleLayer.buffer.duration * start;
+  const endTime = sampleLayer.buffer.duration * end;
+  return {
+    startTime,
+    endTime,
+    duration: Math.max(0.001, endTime - startTime),
+  };
+}
+
+function getSampleRegionSlices(startTime, endTime, sliceCount = 8) {
+  const safeSliceCount = Math.max(2, Math.min(16, Math.round(Number(sliceCount) || 8)));
+  const duration = Math.max(0.001, endTime - startTime);
+  const length = duration / safeSliceCount;
+  return Array.from({ length: safeSliceCount }, (_, index) => ({
+    index,
+    start: startTime + index * length,
+    duration: length,
+  }));
+}
+
+function getStableGrainFocusMs(index, source = {}) {
+  const focusUpperMs = Math.max(1, Math.min(100, Number(source.grainFocus ?? source.focusMs) || 1));
+  const seed =
+    (index + 1) * 12.9898
+    + (Number(source.grainSize ?? source.grainSizeMs) || 0) * 78.233
+    + focusUpperMs * 37.719
+    + (Number(source.grainCount) || 1) * 11.137
+    + (Number(source.voicePlacement) || 0) * 5.311;
+  const raw = Math.sin(seed) * 43758.5453;
+  const unit = raw - Math.floor(raw);
+  return 1 + unit * Math.max(0, focusUpperMs - 1);
+}
+
+function getGrainPlaybackPreview(source = {}, sampleLayer = state.sample) {
+  const { startTime, endTime, duration: regionDuration } = getSampleRegionBoundsForSource(source, sampleLayer);
+  if (!sampleLayer?.buffer || regionDuration <= 0) return null;
+  const grainDuration = Math.min(Math.max(0.001, Number(source.grainSize ?? source.grainSizeMs ?? 40) / 1000), regionDuration);
+  const grainCount = Math.max(1, Math.min(12, Math.round(Number(source.grainCount) || 1)));
+  const focusUpperMs = Math.max(1, Math.min(100, Number(source.grainFocus ?? source.focusMs) || 1));
+  const stereoSpread = Math.max(0, Math.min(100, Number(source.grainStereoSpread ?? source.stereoSpread) || 0)) / 100;
+  const slices = getSampleRegionSlices(startTime, endTime, source.sliceCount);
+  const anchorSlice = slices[0] ?? null;
+  const maxPosition = Math.max(startTime, endTime - grainDuration);
+  const playbackPosition = startTime + Math.max(0, maxPosition - startTime) * ((source.voicePlacement ?? 50) / 100);
+  const slicePosition = anchorSlice
+    ? Math.max(startTime, Math.min(maxPosition, anchorSlice.start))
+    : startTime;
+  const basePosition = source.grainLocation === "fixed" ? playbackPosition : slicePosition;
+  const grains = Array.from({ length: grainCount }, (_, index) => {
+    const focusMs = getStableGrainFocusMs(index, source);
+    const panDirection = index % 2 === 0 ? -1 : 1;
+    const position = Math.max(startTime, Math.min(maxPosition, basePosition + (panDirection * focusMs) / 1000));
+    return {
+      index,
+      start: position,
+      end: Math.min(endTime, position + grainDuration),
+      duration: grainDuration,
+      pan: panDirection * stereoSpread,
+    };
+  });
+
+  return {
+    startTime,
+    endTime,
+    grainDuration,
+    focusUpperMs,
+    playbackPosition,
+    grains,
+  };
+}
+
 function resolveGrainWindow(track, sliceIndex = null, sampleLayer = state.sample) {
-  const { startTime, endTime } = sampleLayer.getRegionBounds();
-  const regionDuration = Math.max(0.02, endTime - startTime);
+  const { startTime, endTime, duration: regionDuration } = getSampleRegionBoundsForSource(track, sampleLayer);
   const grainDuration = Math.min(track.grainSize / 1000, regionDuration);
-  const slices = sampleLayer.getSlices(track.sliceCount);
+  const slices = getSampleRegionSlices(startTime, endTime, track.sliceCount);
   const resolvedSliceIndex = sliceIndex
     ?? (track.grainLocation === "random" && slices.length ? Math.floor(Math.random() * slices.length) : 0);
   const anchorSlice = slices.length ? slices[resolvedSliceIndex % slices.length] : null;
@@ -7091,24 +7300,97 @@ function drawWaveformIntoCanvas({
   }
 }
 
+function drawGrainPlaybackOverlay({ canvas, voice, layer, viewportStartTime, viewportEndTime }) {
+  if (!(canvas instanceof HTMLCanvasElement) || voice?.mode !== "granular" || !layer?.buffer) return;
+  const preview = getGrainPlaybackPreview(voice, layer);
+  if (!preview?.grains?.length) return;
+  const ctx = canvas.getContext("2d");
+  const { width, height } = canvas;
+  const toX = (time) => ((time - viewportStartTime) / Math.max(0.001, viewportEndTime - viewportStartTime)) * width;
+  const playbackX = Math.max(0, Math.min(width, toX(preview.playbackPosition)));
+  const focusWidth = (preview.focusUpperMs / 1000 / Math.max(0.001, viewportEndTime - viewportStartTime)) * width;
+  const focusStartX = Math.max(0, playbackX - focusWidth);
+  const focusEndX = Math.min(width, playbackX + focusWidth);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255, 184, 77, 0.08)";
+  ctx.fillRect(focusStartX, 0, Math.max(1, focusEndX - focusStartX), height);
+  ctx.strokeStyle = "rgba(255, 184, 77, 0.95)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  ctx.moveTo(playbackX, 0);
+  ctx.lineTo(playbackX, height);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const laneTop = Math.max(24, Math.floor(height * 0.58));
+  const laneBottom = height - 10;
+  const laneHeight = Math.max(7, Math.min(15, (laneBottom - laneTop) / preview.grains.length));
+  preview.grains.forEach((grain) => {
+    const trueStartX = Math.max(0, Math.min(width, toX(grain.start)));
+    const trueEndX = Math.max(0, Math.min(width, toX(grain.end)));
+    const trueWidth = Math.max(0.5, trueEndX - trueStartX);
+    const drawWidth = Math.max(3, trueWidth);
+    const drawX = trueWidth < 3 ? trueStartX - (drawWidth - trueWidth) / 2 : trueStartX;
+    const y = laneTop + grain.index * laneHeight;
+    const h = Math.max(5, laneHeight - 2);
+    const leftPan = grain.pan < -0.001;
+    const rightPan = grain.pan > 0.001;
+    ctx.fillStyle = leftPan
+      ? "rgba(76, 208, 224, 0.3)"
+      : rightPan
+        ? "rgba(255, 184, 77, 0.28)"
+        : "rgba(126, 205, 185, 0.26)";
+    ctx.strokeStyle = leftPan
+      ? "rgba(76, 208, 224, 0.88)"
+      : rightPan
+        ? "rgba(255, 184, 77, 0.86)"
+        : "rgba(126, 205, 185, 0.78)";
+    ctx.lineWidth = 1;
+    ctx.fillRect(Math.max(0, drawX), y, Math.min(width, drawWidth), h);
+    ctx.strokeRect(Math.max(0, drawX), y, Math.min(width, drawWidth), h);
+    if (drawWidth >= 12 && h >= 8) {
+      ctx.fillStyle = "rgba(232, 242, 255, 0.86)";
+      ctx.font = '8px "Lexend Deca", "Avenir Next", sans-serif';
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(grain.index + 1), Math.max(1, drawX + 3), y + h / 2 + 0.5);
+    }
+  });
+  ctx.restore();
+}
+
+function getSelectedSampleVoiceCanvases() {
+  const voice = getSelectedVoice();
+  const isGrain = voice?.mode === "granular";
+  return {
+    waveform: isGrain ? ui.grainWaveform : ui.chopWaveform,
+    overview: isGrain ? ui.grainWaveformOverview : ui.chopWaveformOverview,
+  };
+}
+
 function drawChopWaveforms() {
-  if (!ui.chopWaveform || !ui.chopWaveformOverview) return;
+  const { waveform, overview } = getSelectedSampleVoiceCanvases();
+  if (!waveform || !overview) return;
   const voice = getSelectedVoice();
   const layer = getSelectedVoiceSampleLayer();
-  if (voice?.mode !== "chop") {
-    drawWaveformIntoCanvas({ canvas: ui.chopWaveform, layer, emptyMessage: "" });
-    drawWaveformIntoCanvas({ canvas: ui.chopWaveformOverview, layer, emptyMessage: "" });
+  if (!voiceUsesSample(voice)) {
+    drawWaveformIntoCanvas({ canvas: waveform, layer, emptyMessage: "" });
+    drawWaveformIntoCanvas({ canvas: overview, layer, emptyMessage: "" });
     return;
   }
   syncVoiceSampleRegion(state.selectedVoiceIndex);
   const { startTime, endTime } = getVoiceSampleRegionBounds(voice, layer);
-  const playheadTime = getChopDisplayPlayheadTime(voice, layer, state.selectedVoiceIndex);
-  const playheadLength = Math.min(
-    Math.max(0, endTime - startTime),
-    normalizeChopPlaybackLength(voice.chopPlaybackLength, CHOP_PLAYBACK_LENGTH_DEFAULT_MS, voice.chopPlaybackLengthUnit) / 1000,
-  );
+  const isChop = voice.mode === "chop";
+  const playheadTime = isChop ? getChopDisplayPlayheadTime(voice, layer, state.selectedVoiceIndex) : null;
+  const playheadLength = isChop
+    ? Math.min(
+      Math.max(0, endTime - startTime),
+      normalizeChopPlaybackLength(voice.chopPlaybackLength, CHOP_PLAYBACK_LENGTH_DEFAULT_MS, voice.chopPlaybackLengthUnit) / 1000,
+    )
+    : null;
   drawWaveformIntoCanvas({
-    canvas: ui.chopWaveform,
+    canvas: waveform,
     layer,
     viewportStartTime: startTime,
     viewportEndTime: endTime,
@@ -7116,8 +7398,17 @@ function drawChopWaveforms() {
     playheadLength,
     playheadReverse: voice.reverse,
   });
+  if (voice.mode === "granular") {
+    drawGrainPlaybackOverlay({
+      canvas: waveform,
+      voice,
+      layer,
+      viewportStartTime: startTime,
+      viewportEndTime: endTime,
+    });
+  }
   drawWaveformIntoCanvas({
-    canvas: ui.chopWaveformOverview,
+    canvas: overview,
     layer,
     viewportStartTime: 0,
     viewportEndTime: layer?.buffer?.duration ?? 1,
@@ -7126,8 +7417,7 @@ function drawChopWaveforms() {
   });
 }
 
-function getChopOverviewPointerState(clientX) {
-  const canvas = ui.chopWaveformOverview;
+function getChopOverviewPointerState(clientX, canvas = getSelectedSampleVoiceCanvases().overview) {
   const layer = getSelectedVoiceSampleLayer();
   const voice = getSelectedVoice();
   if (!(canvas instanceof HTMLCanvasElement) || !layer?.buffer || !voice) return null;
@@ -7149,8 +7439,8 @@ function getChopOverviewPointerState(clientX) {
   };
 }
 
-function updateChopSampleWindowFromPointer(clientX) {
-  const pointer = getChopOverviewPointerState(clientX);
+function updateChopSampleWindowFromPointer(clientX, canvas = getSelectedSampleVoiceCanvases().overview) {
+  const pointer = getChopOverviewPointerState(clientX, canvas);
   const drag = state.chopSampleDrag;
   if (!pointer || !drag.active) return;
   const minWidth = 0.01;
@@ -7171,13 +7461,12 @@ function updateChopSampleWindowFromPointer(clientX) {
   writeStoredSession();
 }
 
-function updateChopOverviewCursor(clientX = null) {
-  const canvas = ui.chopWaveformOverview;
+function updateChopOverviewCursor(clientX = null, canvas = getSelectedSampleVoiceCanvases().overview) {
   if (!(canvas instanceof HTMLCanvasElement)) return;
   canvas.classList.toggle("is-dragging", state.chopSampleDrag.active);
   canvas.classList.remove("is-region-draggable", "is-region-resizable");
   if (state.chopSampleDrag.active || clientX === null) return;
-  const pointer = getChopOverviewPointerState(clientX);
+  const pointer = getChopOverviewPointerState(clientX, canvas);
   canvas.classList.toggle("is-region-resizable", Boolean(pointer?.nearStart || pointer?.nearEnd));
   canvas.classList.toggle("is-region-draggable", Boolean(pointer?.insideRegion && !pointer.nearStart && !pointer.nearEnd));
 }
@@ -7970,31 +8259,73 @@ function renderPattern(activeStep = state.currentTransportStep) {
   updateCurrentStep(activeStep);
 }
 
+function syncSampleProcessingControls(controls, voice) {
+  if (controls.filterType) controls.filterType.value = voice.chopFilterType;
+  if (controls.filterFrequency) controls.filterFrequency.value = String(voice.chopFilterFrequency);
+  if (controls.filterFrequencyValue) controls.filterFrequencyValue.textContent = formatFilterFrequencyValue(voice.chopFilterFrequency);
+  if (controls.filterQ) controls.filterQ.value = String(voice.chopFilterQ);
+  if (controls.filterQValue) controls.filterQValue.textContent = voice.chopFilterQ.toFixed(1);
+  if (controls.amplitude) controls.amplitude.value = String(voice.chopAmplitude);
+  if (controls.amplitudeValue) controls.amplitudeValue.textContent = `${Math.round(voice.chopAmplitude)}%`;
+  if (controls.sampleRateReduction) controls.sampleRateReduction.value = String(voice.chopSampleRateReduction);
+  if (controls.sampleRateReductionValue) controls.sampleRateReductionValue.textContent = formatChopSampleRateReduction(voice.chopSampleRateReduction);
+  if (controls.bitDepth) controls.bitDepth.value = String(voice.chopBitDepth);
+  if (controls.bitDepthValue) controls.bitDepthValue.textContent = `${voice.chopBitDepth}-bit`;
+}
+
+function getVoiceSampleProcessing(voice = getSelectedVoice()) {
+  return {
+    filterType: voice.chopFilterType,
+    filterFrequency: voice.chopFilterFrequency,
+    filterQ: voice.chopFilterQ,
+    amplitude: voice.chopAmplitude,
+    sampleRateReduction: voice.chopSampleRateReduction,
+    bitDepth: voice.chopBitDepth,
+  };
+}
+
+function bindSampleProcessingControls(controls) {
+  controls.filterType?.addEventListener("change", () => updateSelectedVoice({ chopFilterType: controls.filterType.value }));
+  controls.filterFrequency?.addEventListener("input", () => updateSelectedVoice({ chopFilterFrequency: Number(controls.filterFrequency.value) }));
+  controls.filterQ?.addEventListener("input", () => updateSelectedVoice({ chopFilterQ: Number(controls.filterQ.value) }));
+  controls.amplitude?.addEventListener("input", () => updateSelectedVoice({ chopAmplitude: Number(controls.amplitude.value) }));
+  controls.sampleRateReduction?.addEventListener("input", () => updateSelectedVoice({ chopSampleRateReduction: Number(controls.sampleRateReduction.value) }));
+  controls.bitDepth?.addEventListener("input", () => updateSelectedVoice({ chopBitDepth: Number(controls.bitDepth.value) }));
+}
+
 function syncUi() {
   syncActiveSampleLayer();
   const track = getSelectedTrack();
   const voice = getSelectedVoice();
   renderPatternVoiceOptions();
   renderVoiceSampleOptions();
-  ui.sliceCountValue.textContent = String(voice.sliceCount);
+  if (ui.sliceCountValue) ui.sliceCountValue.textContent = String(voice.sliceCount);
   ui.mode.value = voice.mode;
   ui.grainLocation.value = voice.grainLocation;
   ui.voicePlacement.value = String(voice.voicePlacement);
   ui.voicePlacementValue.textContent = `${voice.voicePlacement}%`;
-  ui.voicePlaybackMode.value = voice.voicePlaybackMode;
   ui.voicePlacement.disabled = voice.grainLocation !== "fixed";
   ui.voicePlacementField.classList.toggle("is-disabled", voice.grainLocation !== "fixed");
+  ui.grainCount.value = String(voice.grainCount);
+  ui.grainCountValue.textContent = String(voice.grainCount);
   ui.grainSize.value = String(voice.grainSize);
-  ui.grainSizeValue.textContent = String(voice.grainSize);
-  ui.grainDensity.value = String(voice.grainDensity);
-  ui.grainDensityValue.textContent = String(voice.grainDensity);
-  ui.spray.value = String(voice.spray);
-  ui.sprayValue.textContent = (voice.spray / 100).toFixed(2);
-  ui.pitch.value = String(voice.pitch);
-  ui.pitchValue.textContent = String(voice.pitch);
-  ui.chopGate.value = String(voice.chopGate);
-  ui.chopGateValue.textContent = `${voice.chopGate}%`;
-  ui.reverse.checked = voice.reverse;
+  ui.grainSizeValue.textContent = `${Math.round(voice.grainSize)}ms`;
+  ui.grainFocus.value = String(voice.grainFocus);
+  ui.grainFocusValue.textContent = `${Math.round(voice.grainFocus)}ms`;
+  ui.grainStereoSpread.value = String(voice.grainStereoSpread);
+  ui.grainStereoSpreadValue.textContent = `${Math.round(voice.grainStereoSpread)}%`;
+  ui.grainReverseToggle?.classList.toggle("active", voice.reverse);
+  ui.grainReverseToggle?.setAttribute("aria-pressed", String(voice.reverse));
+  ui.grainReverseToggle?.setAttribute("aria-label", `Reverse playback ${voice.reverse ? "on" : "off"}`);
+  ui.grainUseNotePitchToggle?.classList.toggle("active", voice.grainUseNotePitch);
+  ui.grainUseNotePitchToggle?.setAttribute("aria-pressed", String(voice.grainUseNotePitch));
+  ui.grainUseNotePitchToggle?.setAttribute("aria-label", `Use note pitch ${voice.grainUseNotePitch ? "on" : "off"}`);
+  ui.grainPlayOneShot?.classList.toggle("active", voice.voicePlaybackMode !== "loop");
+  ui.grainPlayOneShot?.setAttribute("aria-pressed", String(voice.voicePlaybackMode !== "loop"));
+  ui.grainPlayLoop?.classList.toggle("active", voice.voicePlaybackMode === "loop");
+  ui.grainPlayLoop?.setAttribute("aria-pressed", String(voice.voicePlaybackMode === "loop"));
+  if (ui.pitch) ui.pitch.value = String(voice.pitch);
+  if (ui.pitchValue) ui.pitchValue.textContent = String(voice.pitch);
   if (ui.chopPlayheadBehavior) ui.chopPlayheadBehavior.value = voice.chopPlayheadBehavior;
   if (ui.chopPlayheadPosition) ui.chopPlayheadPosition.value = String(voice.chopPlayheadPosition);
   if (ui.chopPlayheadPositionValue) ui.chopPlayheadPositionValue.textContent = `${Math.round(voice.chopPlayheadPosition)}%`;
@@ -8012,17 +8343,32 @@ function syncUi() {
   ui.chopPlayOneShot?.setAttribute("aria-pressed", String(voice.chopPlaybackMode !== "loop"));
   ui.chopPlayLoop?.classList.toggle("active", voice.chopPlaybackMode === "loop");
   ui.chopPlayLoop?.setAttribute("aria-pressed", String(voice.chopPlaybackMode === "loop"));
-  if (ui.chopFilterType) ui.chopFilterType.value = voice.chopFilterType;
-  if (ui.chopFilterFrequency) ui.chopFilterFrequency.value = String(voice.chopFilterFrequency);
-  if (ui.chopFilterFrequencyValue) ui.chopFilterFrequencyValue.textContent = formatFilterFrequencyValue(voice.chopFilterFrequency);
-  if (ui.chopFilterQ) ui.chopFilterQ.value = String(voice.chopFilterQ);
-  if (ui.chopFilterQValue) ui.chopFilterQValue.textContent = voice.chopFilterQ.toFixed(1);
-  if (ui.chopAmplitude) ui.chopAmplitude.value = String(voice.chopAmplitude);
-  if (ui.chopAmplitudeValue) ui.chopAmplitudeValue.textContent = `${Math.round(voice.chopAmplitude)}%`;
-  if (ui.chopSampleRateReduction) ui.chopSampleRateReduction.value = String(voice.chopSampleRateReduction);
-  if (ui.chopSampleRateReductionValue) ui.chopSampleRateReductionValue.textContent = formatChopSampleRateReduction(voice.chopSampleRateReduction);
-  if (ui.chopBitDepth) ui.chopBitDepth.value = String(voice.chopBitDepth);
-  if (ui.chopBitDepthValue) ui.chopBitDepthValue.textContent = `${voice.chopBitDepth}-bit`;
+  syncSampleProcessingControls({
+    filterType: ui.chopFilterType,
+    filterFrequency: ui.chopFilterFrequency,
+    filterFrequencyValue: ui.chopFilterFrequencyValue,
+    filterQ: ui.chopFilterQ,
+    filterQValue: ui.chopFilterQValue,
+    amplitude: ui.chopAmplitude,
+    amplitudeValue: ui.chopAmplitudeValue,
+    sampleRateReduction: ui.chopSampleRateReduction,
+    sampleRateReductionValue: ui.chopSampleRateReductionValue,
+    bitDepth: ui.chopBitDepth,
+    bitDepthValue: ui.chopBitDepthValue,
+  }, voice);
+  syncSampleProcessingControls({
+    filterType: ui.grainFilterType,
+    filterFrequency: ui.grainFilterFrequency,
+    filterFrequencyValue: ui.grainFilterFrequencyValue,
+    filterQ: ui.grainFilterQ,
+    filterQValue: ui.grainFilterQValue,
+    amplitude: ui.grainAmplitude,
+    amplitudeValue: ui.grainAmplitudeValue,
+    sampleRateReduction: ui.grainSampleRateReduction,
+    sampleRateReductionValue: ui.grainSampleRateReductionValue,
+    bitDepth: ui.grainBitDepth,
+    bitDepthValue: ui.grainBitDepthValue,
+  }, voice);
   ui.synthWave.value = voice.synthWave;
   ui.synthWaveShape.value = String(voice.synthWaveShape);
   ui.synthWaveShapeValue.textContent = `${Math.round(voice.synthWaveShape)}%`;
@@ -8037,8 +8383,8 @@ function syncUi() {
   ui.synthFilterFrequencyValue.textContent = formatFilterFrequencyValue(voice.synthFilterFrequency);
   ui.synthFilterQ.value = String(voice.synthFilterQ);
   ui.synthFilterQValue.textContent = voice.synthFilterQ.toFixed(1);
-  ui.pitch.disabled = true;
-  ui.voicePitchField.classList.add("is-disabled");
+  ui.pitch?.toggleAttribute("disabled", true);
+  ui.voicePitchField?.classList.add("is-disabled");
   const synthMode = voice.mode === "synth";
   const chopMode = voice.mode === "chop";
   const sampleVoiceModeLabel = voice.mode === "chop" ? "Chop" : "Grain";
@@ -8073,7 +8419,7 @@ function syncUi() {
   syncSequencerActions();
   ui.regionStart.value = String(Math.round(state.sample.regionStart * 1000));
   ui.regionEnd.value = String(Math.round(state.sample.regionEnd * 1000));
-  ui.sliceCount.value = String(voice.sliceCount);
+  if (ui.sliceCount) ui.sliceCount.value = String(voice.sliceCount);
 
   if (!ui.sampleStatus) return;
 
@@ -8152,6 +8498,8 @@ function updateSelectedVoice(patch) {
     "chopPlaybackLength",
     "chopUseNotePitch",
     "chopPlaybackMode",
+  ];
+  const processingKeys = [
     "chopFilterType",
     "chopFilterFrequency",
     "chopFilterQ",
@@ -8160,6 +8508,8 @@ function updateSelectedVoice(patch) {
     "chopBitDepth",
   ];
   const shouldResetPlayback = resetKeys.some((key) => key in patch);
+  const shouldUpdateProcessing = processingKeys.some((key) => key in patch);
+  const shouldUpdateStereoSpread = "grainStereoSpread" in patch;
   if (
     "mode" in patch
     || "sampleId" in patch
@@ -8171,6 +8521,8 @@ function updateSelectedVoice(patch) {
   state.tracks.forEach((track, index) => {
     if (track.voiceIndex !== state.selectedVoiceIndex) return;
     state.playback?.updateTrackBus(index, track);
+    if (shouldUpdateProcessing) state.playback?.updateActiveTrackVoiceProcessing(index, getVoiceSampleProcessing(getSelectedVoice()));
+    if (shouldUpdateStereoSpread) state.playback?.updateActiveTrackGrainStereoSpread(index, getSelectedVoice().grainStereoSpread);
     if (shouldResetPlayback) resetTrackPlaybackState(index);
   });
   syncUi();
@@ -8580,7 +8932,7 @@ ui.regionEnd.addEventListener("input", () => {
   writeStoredSession();
 });
 
-ui.sliceCount.addEventListener("input", () => {
+ui.sliceCount?.addEventListener("input", () => {
   updateSelectedVoice({ sliceCount: Number(ui.sliceCount.value) });
 });
 
@@ -8614,7 +8966,10 @@ ui.sessionClear?.addEventListener("click", openSessionClearOverlay);
 ui.mode.addEventListener("change", () => updateSelectedVoice({ mode: ui.mode.value }));
 ui.grainLocation.addEventListener("change", () => updateSelectedVoice({ grainLocation: ui.grainLocation.value }));
 ui.voicePlacement.addEventListener("input", () => updateSelectedVoice({ voicePlacement: Number(ui.voicePlacement.value) }));
-ui.voicePlaybackMode.addEventListener("change", () => updateSelectedVoice({ voicePlaybackMode: ui.voicePlaybackMode.value }));
+ui.grainReverseToggle?.addEventListener("click", () => updateSelectedVoice({ reverse: !getSelectedVoice().reverse }));
+ui.grainUseNotePitchToggle?.addEventListener("click", () => updateSelectedVoice({ grainUseNotePitch: !getSelectedVoice().grainUseNotePitch }));
+ui.grainPlayOneShot?.addEventListener("click", () => updateSelectedVoice({ voicePlaybackMode: "one-shot" }));
+ui.grainPlayLoop?.addEventListener("click", () => updateSelectedVoice({ voicePlaybackMode: "loop" }));
 ui.chopPlayheadBehavior?.addEventListener("change", () => updateSelectedVoice({ chopPlayheadBehavior: ui.chopPlayheadBehavior.value }));
 ui.chopPlayheadPosition?.addEventListener("input", () => updateSelectedVoice({ chopPlayheadPosition: Number(ui.chopPlayheadPosition.value) }));
 ui.chopPlaybackLength?.addEventListener("input", () => updateSelectedVoice({ chopPlaybackLength: Number(ui.chopPlaybackLength.value) }));
@@ -8622,12 +8977,22 @@ ui.chopReverseToggle?.addEventListener("click", () => updateSelectedVoice({ reve
 ui.chopUseNotePitchToggle?.addEventListener("click", () => updateSelectedVoice({ chopUseNotePitch: !getSelectedVoice().chopUseNotePitch }));
 ui.chopPlayOneShot?.addEventListener("click", () => updateSelectedVoice({ chopPlaybackMode: "one-shot" }));
 ui.chopPlayLoop?.addEventListener("click", () => updateSelectedVoice({ chopPlaybackMode: "loop" }));
-ui.chopFilterType?.addEventListener("change", () => updateSelectedVoice({ chopFilterType: ui.chopFilterType.value }));
-ui.chopFilterFrequency?.addEventListener("input", () => updateSelectedVoice({ chopFilterFrequency: Number(ui.chopFilterFrequency.value) }));
-ui.chopFilterQ?.addEventListener("input", () => updateSelectedVoice({ chopFilterQ: Number(ui.chopFilterQ.value) }));
-ui.chopAmplitude?.addEventListener("input", () => updateSelectedVoice({ chopAmplitude: Number(ui.chopAmplitude.value) }));
-ui.chopSampleRateReduction?.addEventListener("input", () => updateSelectedVoice({ chopSampleRateReduction: Number(ui.chopSampleRateReduction.value) }));
-ui.chopBitDepth?.addEventListener("input", () => updateSelectedVoice({ chopBitDepth: Number(ui.chopBitDepth.value) }));
+bindSampleProcessingControls({
+  filterType: ui.chopFilterType,
+  filterFrequency: ui.chopFilterFrequency,
+  filterQ: ui.chopFilterQ,
+  amplitude: ui.chopAmplitude,
+  sampleRateReduction: ui.chopSampleRateReduction,
+  bitDepth: ui.chopBitDepth,
+});
+bindSampleProcessingControls({
+  filterType: ui.grainFilterType,
+  filterFrequency: ui.grainFilterFrequency,
+  filterQ: ui.grainFilterQ,
+  amplitude: ui.grainAmplitude,
+  sampleRateReduction: ui.grainSampleRateReduction,
+  bitDepth: ui.grainBitDepth,
+});
 ui.trackBars.addEventListener("input", () => updateSelectedTrackPattern({ barCount: Number(ui.trackBars.value) }));
 ui.trackSteps.addEventListener("input", () => updateSelectedTrackPattern({ stepCount: Number(ui.trackSteps.value) }));
 ui.trackPlaybackMode.addEventListener("change", () => updateSelectedTrackPattern({ playbackMode: ui.trackPlaybackMode.value }));
@@ -8878,12 +9243,11 @@ ui.mixVolume.addEventListener("input", () => {
   syncUi();
   writeStoredSession();
 });
+ui.grainCount.addEventListener("input", () => updateSelectedVoice({ grainCount: Number(ui.grainCount.value) }));
 ui.grainSize.addEventListener("input", () => updateSelectedVoice({ grainSize: Number(ui.grainSize.value) }));
-ui.grainDensity.addEventListener("input", () => updateSelectedVoice({ grainDensity: Number(ui.grainDensity.value) }));
-ui.spray.addEventListener("input", () => updateSelectedVoice({ spray: Number(ui.spray.value) }));
-ui.pitch.addEventListener("input", () => updateSelectedVoice({ pitch: Number(ui.pitch.value) }));
-ui.chopGate.addEventListener("input", () => updateSelectedVoice({ chopGate: Number(ui.chopGate.value) }));
-ui.reverse.addEventListener("change", () => updateSelectedVoice({ reverse: ui.reverse.checked }));
+ui.grainFocus.addEventListener("input", () => updateSelectedVoice({ grainFocus: Number(ui.grainFocus.value) }));
+ui.grainStereoSpread.addEventListener("input", () => updateSelectedVoice({ grainStereoSpread: Number(ui.grainStereoSpread.value) }));
+ui.pitch?.addEventListener("input", () => updateSelectedVoice({ pitch: Number(ui.pitch.value) }));
 ui.synthWave.addEventListener("change", () => updateSelectedVoice({ synthWave: ui.synthWave.value }));
 ui.synthWaveShape.addEventListener("input", () => updateSelectedVoice({ synthWaveShape: Number(ui.synthWaveShape.value) }));
 ui.synthNoiseMix.addEventListener("input", () => updateSelectedVoice({ synthNoiseMix: Number(ui.synthNoiseMix.value) }));
@@ -9006,54 +9370,59 @@ ui.waveformOverview.addEventListener("pointerleave", () => {
   if (!state.overviewDrag.active) updateOverviewCursor();
 });
 
-ui.chopWaveformOverview?.addEventListener("pointerdown", (event) => {
-  const pointerState = getChopOverviewPointerState(event.clientX);
-  if (!pointerState) return;
-  const mode = pointerState.nearStart
-    ? "start"
-    : pointerState.nearEnd
-      ? "end"
-      : pointerState.insideRegion
-        ? "move"
-        : null;
-  if (!mode) return;
-  event.preventDefault();
-  state.chopSampleDrag = {
-    active: true,
-    pointerId: event.pointerId,
-    mode,
-    offset: pointerState.normalized - pointerState.regionStart,
-    width: pointerState.regionEnd - pointerState.regionStart,
-  };
-  ui.chopWaveformOverview.setPointerCapture(event.pointerId);
-  updateChopOverviewCursor();
-});
-
-ui.chopWaveformOverview?.addEventListener("pointermove", (event) => {
-  if (state.chopSampleDrag.active && state.chopSampleDrag.pointerId === event.pointerId) {
+function bindSampleVoiceOverviewDrag(canvas) {
+  canvas?.addEventListener("pointerdown", (event) => {
+    const pointerState = getChopOverviewPointerState(event.clientX, canvas);
+    if (!pointerState) return;
+    const mode = pointerState.nearStart
+      ? "start"
+      : pointerState.nearEnd
+        ? "end"
+        : pointerState.insideRegion
+          ? "move"
+          : null;
+    if (!mode) return;
     event.preventDefault();
-    updateChopSampleWindowFromPointer(event.clientX);
-    return;
-  }
-  updateChopOverviewCursor(event.clientX);
-});
+    state.chopSampleDrag = {
+      active: true,
+      pointerId: event.pointerId,
+      mode,
+      offset: pointerState.normalized - pointerState.regionStart,
+      width: pointerState.regionEnd - pointerState.regionStart,
+    };
+    canvas.setPointerCapture(event.pointerId);
+    updateChopOverviewCursor(null, canvas);
+  });
 
-ui.chopWaveformOverview?.addEventListener("pointerup", (event) => {
-  if (state.chopSampleDrag.active && state.chopSampleDrag.pointerId === event.pointerId) {
+  canvas?.addEventListener("pointermove", (event) => {
+    if (state.chopSampleDrag.active && state.chopSampleDrag.pointerId === event.pointerId) {
+      event.preventDefault();
+      updateChopSampleWindowFromPointer(event.clientX, canvas);
+      return;
+    }
+    updateChopOverviewCursor(event.clientX, canvas);
+  });
+
+  canvas?.addEventListener("pointerup", (event) => {
+    if (state.chopSampleDrag.active && state.chopSampleDrag.pointerId === event.pointerId) {
+      resetChopSampleDrag();
+      canvas.releasePointerCapture(event.pointerId);
+    }
+    updateChopOverviewCursor(event.clientX, canvas);
+  });
+
+  canvas?.addEventListener("pointercancel", () => {
     resetChopSampleDrag();
-    ui.chopWaveformOverview.releasePointerCapture(event.pointerId);
-  }
-  updateChopOverviewCursor(event.clientX);
-});
+    updateChopOverviewCursor(null, canvas);
+  });
 
-ui.chopWaveformOverview?.addEventListener("pointercancel", () => {
-  resetChopSampleDrag();
-  updateChopOverviewCursor();
-});
+  canvas?.addEventListener("pointerleave", () => {
+    if (!state.chopSampleDrag.active) updateChopOverviewCursor(null, canvas);
+  });
+}
 
-ui.chopWaveformOverview?.addEventListener("pointerleave", () => {
-  if (!state.chopSampleDrag.active) updateChopOverviewCursor();
-});
+bindSampleVoiceOverviewDrag(ui.chopWaveformOverview);
+bindSampleVoiceOverviewDrag(ui.grainWaveformOverview);
 
 ui.transportToggle.addEventListener("click", async () => {
   try {

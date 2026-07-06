@@ -141,61 +141,28 @@
                 </section>
               </div>
               <div class="control-stack track-settings-stack">
-                <section id="sample-voice-settings-group" class="control-group sample-voice-settings-group" aria-labelledby="sample-voice-group-title">
-                  <div class="control-group-head">
-                    <h3 id="sample-voice-group-title">Grain</h3>
-                  </div>
-                  <div class="control-stack track-settings-stack">
-                    <section id="sample-settings-group" class="control-group nested-control-group" aria-labelledby="sample-group-title">
-                      <div class="control-group-head">
-                        <h3 id="sample-group-title">Sample</h3>
-                      </div>
-                      <div class="control-grid track-settings-grid">
-                        <label class="compact-field">
-                          Slices
-                          <div class="slider-row">
-                            <input id="slice-count" type="range" min="2" max="16" value="8" />
-                            <span id="slice-count-value" class="value-pill">8</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Grain Size (ms)
-                          <div class="slider-row">
-                            <input id="grain-size" type="range" min="20" max="350" value="110" />
-                            <span id="grain-size-value" class="value-pill">110</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Density (grains/s)
-                          <div class="slider-row">
-                            <input id="grain-density" type="range" min="2" max="40" value="12" />
-                            <span id="grain-density-value" class="value-pill">12</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Spray
-                          <div class="slider-row">
-                            <input id="spray" type="range" min="0" max="100" value="18" />
-                            <span id="spray-value" class="value-pill">0.18</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Chop Gate
-                          <div class="slider-row">
-                            <input id="chop-gate" type="range" min="10" max="100" value="70" />
-                            <span id="chop-gate-value" class="value-pill">70%</span>
-                          </div>
-                        </label>
-                      </div>
-                    </section>
+                <section id="sample-voice-settings-group" class="control-stack grain-settings-stack sample-voice-settings-group" aria-label="Grain voice settings">
+                  <section id="sample-settings-group" class="control-group nested-control-group grain-sample-group" aria-labelledby="sample-group-title">
+                    <div class="control-group-head">
+                      <h3 id="sample-group-title">Sample</h3>
+                    </div>
+                    <div class="chop-sample-display">
+                      <canvas id="grain-waveform" class="chop-waveform" width="1200" height="184"></canvas>
+                      <canvas id="grain-waveform-overview" class="chop-waveform-overview" width="1200" height="64"></canvas>
+                    </div>
+                  </section>
 
-                    <section id="voice-playback-settings-group" class="control-group nested-control-group" aria-labelledby="voice-group-title">
-                      <div class="control-group-head">
-                        <h3 id="voice-group-title">Voice</h3>
-                      </div>
-                      <div class="control-grid track-settings-grid">
+                  <section id="voice-playback-settings-group" class="control-group nested-control-group grain-playback-group" aria-labelledby="voice-group-title">
+                    <div class="control-group-head">
+                      <h3 id="voice-group-title">Playback</h3>
+                    </div>
+                    <div class="control-grid grain-playback-grid">
+                      <section class="control-group nested-control-group grain-playback-subgroup" aria-labelledby="grain-position-title">
+                        <div class="control-group-head">
+                          <h3 id="grain-position-title">Position</h3>
+                        </div>
                         <label class="compact-field">
-                          Voice Location
+                          Playback Behavior
                           <select id="grain-location">
                             <option value="fixed">Fixed</option>
                             <option value="sequential">Sequential</option>
@@ -204,37 +171,133 @@
                           </select>
                         </label>
                         <label class="compact-field" id="voice-placement-field">
-                          Voice Placement
+                          Playback Position
                           <div class="slider-row">
                             <input id="voice-placement" type="range" min="0" max="100" value="50" />
                             <span id="voice-placement-value" class="value-pill">50%</span>
                           </div>
                         </label>
+                      </section>
+
+                      <section class="control-group nested-control-group grain-playback-subgroup" aria-labelledby="grain-cloud-title">
+                        <div class="control-group-head">
+                          <h3 id="grain-cloud-title">Grains</h3>
+                        </div>
                         <label class="compact-field">
-                          Voice Playback Mode
-                          <select id="voice-playback-mode">
-                            <option value="one-shot">One Shot</option>
-                            <option value="loop">Loop</option>
-                            <option value="smooth-loop">Smooth Loop</option>
-                          </select>
-                        </label>
-                        <label class="compact-field compact-field-inline">
-                          <span>Reverse</span>
-                          <span class="checkbox-inline">
-                            <input id="reverse" type="checkbox" />
-                            <span>enabled</span>
-                          </span>
-                        </label>
-                        <label class="compact-field" id="voice-pitch-field">
-                          Pitch (semitones)
+                          Number
                           <div class="slider-row">
-                            <input id="pitch" type="range" min="-24" max="24" value="0" />
-                            <span id="pitch-value" class="value-pill">0</span>
+                            <input id="grain-count" type="range" min="1" max="12" step="1" value="4" />
+                            <span id="grain-count-value" class="value-pill">4</span>
                           </div>
                         </label>
-                      </div>
-                    </section>
-                  </div>
+                        <label class="compact-field">
+                          Size (ms)
+                          <div class="slider-row">
+                            <input id="grain-size" type="range" min="1" max="100" step="1" value="40" />
+                            <span id="grain-size-value" class="value-pill">40ms</span>
+                          </div>
+                        </label>
+                        <label class="compact-field">
+                          Focus (ms)
+                          <div class="slider-row">
+                            <input id="grain-focus" type="range" min="1" max="100" step="1" value="18" />
+                            <span id="grain-focus-value" class="value-pill">18ms</span>
+                          </div>
+                        </label>
+                        <label class="compact-field">
+                          Stereo Spread
+                          <div class="slider-row">
+                            <input id="grain-stereo-spread" type="range" min="0" max="100" step="1" value="0" />
+                            <span id="grain-stereo-spread-value" class="value-pill">0%</span>
+                          </div>
+                        </label>
+                      </section>
+
+                      <section class="control-group nested-control-group grain-playback-subgroup grain-playback-options-subgroup" aria-labelledby="grain-options-title">
+                        <div class="control-group-head">
+                          <h3 id="grain-options-title">Mode</h3>
+                        </div>
+                        <div class="grain-toggle-stack">
+                          <div class="chop-toggle-control">
+                            <span class="composer-playback-label">Reverse</span>
+                            <button id="grain-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off">
+                              <span class="composer-slot-switch-track" aria-hidden="true">
+                                <span class="composer-slot-switch-thumb"></span>
+                              </span>
+                            </button>
+                          </div>
+                          <div class="chop-toggle-control">
+                            <span class="composer-playback-label">Note Pitch</span>
+                            <button id="grain-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="true" aria-label="Use note pitch on">
+                              <span class="composer-slot-switch-track" aria-hidden="true">
+                                <span class="composer-slot-switch-thumb"></span>
+                              </span>
+                            </button>
+                          </div>
+                          <div class="voice-operation-button-group grain-playback-mode-group" role="group" aria-label="Grain playback mode">
+                            <button id="grain-play-one-shot" type="button">1 Shot</button>
+                            <button id="grain-play-loop" type="button">Loop</button>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  </section>
+
+                  <section class="control-group nested-control-group grain-processing-group" aria-labelledby="grain-processing-title">
+                    <div class="control-group-head">
+                      <h3 id="grain-processing-title">Processing</h3>
+                    </div>
+                    <div class="control-stack chop-processing-stack">
+                      <section class="control-group nested-control-group synth-filter-group chop-filter-group" aria-labelledby="grain-filter-group-title">
+                        <div class="control-group-head">
+                          <h3 id="grain-filter-group-title">Filter</h3>
+                        </div>
+                        <label class="compact-field">
+                          Type
+                          <select id="grain-filter-type">
+                            <option value="lowpass">Low Pass</option>
+                            <option value="bandpass">Band Pass</option>
+                            <option value="highpass">High Pass</option>
+                          </select>
+                        </label>
+                        <label class="compact-field">
+                          Frequency
+                          <div class="slider-row">
+                            <input id="grain-filter-frequency" type="range" min="20" max="16000" value="16000" />
+                            <span id="grain-filter-frequency-value" class="value-pill">16.00 kHz</span>
+                          </div>
+                        </label>
+                        <label class="compact-field">
+                          Q
+                          <div class="slider-row">
+                            <input id="grain-filter-q" type="range" min="0.1" max="20" step="0.1" value="0.8" />
+                            <span id="grain-filter-q-value" class="value-pill">0.8</span>
+                          </div>
+                        </label>
+                      </section>
+                      <label class="compact-field">
+                        Amplitude
+                        <div class="slider-row">
+                          <input id="grain-amplitude" type="range" min="0" max="300" value="100" />
+                          <span id="grain-amplitude-value" class="value-pill">100%</span>
+                        </div>
+                      </label>
+                      <label class="compact-field">
+                        Sample Rate
+                        <div class="slider-row">
+                          <input id="grain-sample-rate-reduction" type="range" min="0" max="100" value="0" />
+                          <span id="grain-sample-rate-reduction-value" class="value-pill">Clean</span>
+                        </div>
+                      </label>
+                      <label class="compact-field">
+                        Bit Depth
+                        <div class="slider-row">
+                          <input id="grain-bit-depth" type="range" min="4" max="16" step="1" value="16" />
+                          <span id="grain-bit-depth-value" class="value-pill">16-bit</span>
+                        </div>
+                      </label>
+                    </div>
+                  </section>
                 </section>
 
                 <section id="synth-settings-group" class="control-group synth-settings-group ui-hidden" aria-label="Synth voice settings">
