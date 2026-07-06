@@ -4898,10 +4898,6 @@ function getPatternVariationLockedStepIndexes(track, pattern, lockMode) {
   return lockedIndexes;
 }
 
-function shouldApplyPatternVariation(amount) {
-  return Math.random() * 100 < Math.max(0, Math.min(100, Number(amount) || 0));
-}
-
 function shufflePatternVariationIndexes(indexes) {
   const shuffled = indexes.slice();
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -4911,19 +4907,10 @@ function shufflePatternVariationIndexes(indexes) {
   return shuffled;
 }
 
-function getPatternActiveStepCount(pattern, visibleCellCount) {
-  return pattern.pattern.slice(0, visibleCellCount).filter(Boolean).length;
-}
-
-function getStepVariationTargetActiveCount(track, pattern, visibleCellCount, lockedIndexes) {
-  const lockedActiveCount = Array.from(lockedIndexes).filter((stepIndex) => Boolean(pattern.pattern[stepIndex])).length;
-  if (pattern.stepFill.type === "none") {
-    return Math.max(lockedActiveCount, getPatternActiveStepCount(pattern, visibleCellCount));
-  }
-
-  const fillAmount = Math.max(0, Math.min(100, Number(pattern.stepFill.amount) || 0));
-  const fillTarget = Math.round((visibleCellCount * fillAmount) / 100);
-  return Math.max(lockedActiveCount, Math.min(visibleCellCount, fillTarget));
+function getPatternVariationModificationCount(candidateCount, amount) {
+  const safeCandidateCount = Math.max(0, Number(candidateCount) || 0);
+  const safeAmount = Math.max(0, Math.min(100, Number(amount) || 0));
+  return Math.max(0, Math.min(safeCandidateCount, Math.round((safeCandidateCount * safeAmount) / 100)));
 }
 
 function pickPatternVariationPitch(track, pattern, currentPitch = null) {
@@ -4943,9 +4930,6 @@ function applyStepVariation(track, pattern) {
   const lockedIndexes = getPatternVariationLockedStepIndexes(track, activePattern, settings.lockMode);
   const activeIndexes = [];
   const inactiveIndexes = [];
-  const targetActiveCount = getStepVariationTargetActiveCount(track, activePattern, visibleCellCount, lockedIndexes);
-  let activeCount = getPatternActiveStepCount(activePattern, visibleCellCount);
-  let mutated = false;
 
   for (let stepIndex = 0; stepIndex < visibleCellCount; stepIndex += 1) {
     if (lockedIndexes.has(stepIndex)) continue;
@@ -4953,44 +4937,26 @@ function applyStepVariation(track, pattern) {
     else inactiveIndexes.push(stepIndex);
   }
 
-  const deactivate = (stepIndex) => {
-    if (!activePattern.pattern[stepIndex]) return false;
-    activePattern.pattern[stepIndex] = false;
-    activePattern.stepPitches[stepIndex] = null;
-    activeCount -= 1;
-    mutated = true;
-    return true;
-  };
-
-  const activate = (stepIndex) => {
-    if (activePattern.pattern[stepIndex] || activeCount >= targetActiveCount) return false;
-    activePattern.pattern[stepIndex] = true;
-    activeCount += 1;
-    assignPitchFillToStep(track, stepIndex, activePattern);
-    mutated = true;
-    return true;
-  };
-
-  let remainingChanges = Math.round(((activeIndexes.length + inactiveIndexes.length) * settings.amount) / 100);
-  if (remainingChanges <= 0) return false;
+  const modificationCount = Math.min(
+    getPatternVariationModificationCount(activeIndexes.length, settings.amount),
+    inactiveIndexes.length,
+  );
+  if (modificationCount <= 0) return false;
 
   const shuffledActiveIndexes = shufflePatternVariationIndexes(activeIndexes);
   const shuffledInactiveIndexes = shufflePatternVariationIndexes(inactiveIndexes);
+  let mutated = false;
 
-  while (remainingChanges > 0 && activeCount > targetActiveCount && shuffledActiveIndexes.length) {
-    if (deactivate(shuffledActiveIndexes.pop())) remainingChanges -= 1;
-  }
-
-  while (remainingChanges > 0 && activeCount < targetActiveCount && shuffledInactiveIndexes.length) {
-    if (activate(shuffledInactiveIndexes.pop())) remainingChanges -= 1;
-  }
-
-  while (remainingChanges > 1 && shuffledActiveIndexes.length && shuffledInactiveIndexes.length) {
-    const activeStepIndex = shuffledActiveIndexes.pop();
-    const inactiveStepIndex = shuffledInactiveIndexes.pop();
-    if (!deactivate(activeStepIndex)) continue;
-    remainingChanges -= 1;
-    if (activate(inactiveStepIndex)) remainingChanges -= 1;
+  for (let index = 0; index < modificationCount; index += 1) {
+    const sourceStepIndex = shuffledActiveIndexes[index];
+    const targetStepIndex = shuffledInactiveIndexes[index];
+    if (!Number.isInteger(sourceStepIndex) || !Number.isInteger(targetStepIndex)) continue;
+    const sourcePitch = activePattern.stepPitches[sourceStepIndex] ?? null;
+    activePattern.pattern[sourceStepIndex] = false;
+    activePattern.stepPitches[sourceStepIndex] = null;
+    activePattern.pattern[targetStepIndex] = true;
+    activePattern.stepPitches[targetStepIndex] = sourcePitch;
+    mutated = true;
   }
 
   return mutated;
@@ -5003,16 +4969,25 @@ function applyPitchVariation(track, pattern) {
 
   const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
   const lockedIndexes = getPatternVariationLockedStepIndexes(track, activePattern, settings.lockMode);
-  let mutated = false;
+  const activeIndexes = [];
 
   for (let stepIndex = 0; stepIndex < visibleCellCount; stepIndex += 1) {
-    if (!activePattern.pattern[stepIndex] || lockedIndexes.has(stepIndex) || !shouldApplyPatternVariation(settings.amount)) continue;
+    if (activePattern.pattern[stepIndex] && !lockedIndexes.has(stepIndex)) activeIndexes.push(stepIndex);
+  }
+
+  const modificationCount = getPatternVariationModificationCount(activeIndexes.length, settings.amount);
+  if (modificationCount <= 0) return false;
+
+  const selectedIndexes = shufflePatternVariationIndexes(activeIndexes).slice(0, modificationCount);
+  let mutated = false;
+
+  selectedIndexes.forEach((stepIndex) => {
     const currentPitch = getTrackStepPitchMidi(track, stepIndex, activePattern);
     const nextPitch = pickPatternVariationPitch(track, activePattern, currentPitch);
-    if (activePattern.stepPitches[stepIndex] === nextPitch) continue;
+    if (currentPitch === nextPitch) return;
     activePattern.stepPitches[stepIndex] = nextPitch;
     mutated = true;
-  }
+  });
 
   return mutated;
 }
