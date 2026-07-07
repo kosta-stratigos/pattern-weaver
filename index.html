@@ -161,7 +161,7 @@
                         <div class="control-group-head">
                           <h3 id="grain-position-title">Position</h3>
                         </div>
-                        <label class="compact-field">
+                        <label id="grain-location-field" class="compact-field ui-hidden">
                           Playback Behavior
                           <select id="grain-location">
                             <option value="fixed">Fixed</option>
@@ -171,12 +171,47 @@
                           </select>
                         </label>
                         <label class="compact-field" id="voice-placement-field">
-                          Playback Position
+                          Playback Center
                           <div class="slider-row">
                             <input id="voice-placement" type="range" min="0" max="100" value="50" />
                             <span id="voice-placement-value" class="value-pill">50%</span>
                           </div>
                         </label>
+                        <section class="control-group nested-control-group grain-envelope-group" aria-labelledby="grain-envelope-title">
+                          <div class="control-group-head">
+                            <h3 id="grain-envelope-title">Grain Envelope</h3>
+                          </div>
+                          <div class="grain-envelope-grid">
+                            <label class="compact-field">
+                              Attack
+                              <div class="slider-row">
+                                <input id="grain-envelope-attack" type="range" min="0" max="100" step="1" value="4" />
+                                <span id="grain-envelope-attack-value" class="value-pill">4ms</span>
+                              </div>
+                            </label>
+                            <label class="compact-field">
+                              Decay
+                              <div class="slider-row">
+                                <input id="grain-envelope-decay" type="range" min="0" max="100" step="1" value="10" />
+                                <span id="grain-envelope-decay-value" class="value-pill">10ms</span>
+                              </div>
+                            </label>
+                            <label class="compact-field">
+                              Sustain
+                              <div class="slider-row">
+                                <input id="grain-envelope-sustain" type="range" min="0" max="100" step="1" value="100" />
+                                <span id="grain-envelope-sustain-value" class="value-pill">100%</span>
+                              </div>
+                            </label>
+                            <label class="compact-field">
+                              Release
+                              <div class="slider-row">
+                                <input id="grain-envelope-release" type="range" min="0" max="100" step="1" value="8" />
+                                <span id="grain-envelope-release-value" class="value-pill">8ms</span>
+                              </div>
+                            </label>
+                          </div>
+                        </section>
                       </section>
 
                       <section class="control-group nested-control-group grain-playback-subgroup" aria-labelledby="grain-cloud-title">
@@ -195,6 +230,13 @@
                           <div class="slider-row">
                             <input id="grain-size" type="range" min="1" max="100" step="1" value="40" />
                             <span id="grain-size-value" class="value-pill">40ms</span>
+                          </div>
+                        </label>
+                        <label class="compact-field">
+                          Grain Playback Spacing
+                          <div class="slider-row">
+                            <input id="grain-spacing" type="range" min="0" max="200" step="1" value="0" />
+                            <span id="grain-spacing-value" class="value-pill">0ms</span>
                           </div>
                         </label>
                         <label class="compact-field">

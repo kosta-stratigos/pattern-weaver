@@ -793,7 +793,7 @@ h2 {
 }
 
 .grain-playback-grid {
-  grid-template-columns: minmax(170px, 0.9fr) minmax(220px, 1.1fr) minmax(150px, 0.72fr);
+  grid-template-columns: minmax(220px, 0.95fr) minmax(220px, 1.05fr) minmax(150px, 0.72fr);
   align-items: stretch;
 }
 
@@ -815,6 +815,23 @@ h2 {
 
 .grain-playback-mode-group {
   min-height: 36px;
+}
+
+.grain-envelope-group {
+  gap: 8px;
+  padding: 9px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 40%),
+    rgba(0, 0, 0, 0.1);
+}
+
+.grain-envelope-grid {
+  display: grid;
+  gap: 7px;
+}
+
+.grain-envelope-grid .slider-row {
+  gap: 6px;
 }
 
 .chop-settings-stack {
