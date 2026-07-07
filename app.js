@@ -103,14 +103,25 @@ const ui = {
   voicePlacementField: document.querySelector("#voice-placement-field"),
   voicePlacement: document.querySelector("#voice-placement"),
   voicePlacementValue: document.querySelector("#voice-placement-value"),
+  grainEnvelopeType: document.querySelector("#grain-envelope-type"),
   grainEnvelopeAttack: document.querySelector("#grain-envelope-attack"),
   grainEnvelopeAttackValue: document.querySelector("#grain-envelope-attack-value"),
+  grainEnvelopeAttackField: document.querySelector("#grain-envelope-attack-field"),
   grainEnvelopeDecay: document.querySelector("#grain-envelope-decay"),
   grainEnvelopeDecayValue: document.querySelector("#grain-envelope-decay-value"),
+  grainEnvelopeDecayField: document.querySelector("#grain-envelope-decay-field"),
   grainEnvelopeSustain: document.querySelector("#grain-envelope-sustain"),
   grainEnvelopeSustainValue: document.querySelector("#grain-envelope-sustain-value"),
+  grainEnvelopeSustainField: document.querySelector("#grain-envelope-sustain-field"),
   grainEnvelopeRelease: document.querySelector("#grain-envelope-release"),
   grainEnvelopeReleaseValue: document.querySelector("#grain-envelope-release-value"),
+  grainEnvelopeReleaseField: document.querySelector("#grain-envelope-release-field"),
+  grainEnvelopeGaussianWidth: document.querySelector("#grain-envelope-gaussian-width"),
+  grainEnvelopeGaussianWidthValue: document.querySelector("#grain-envelope-gaussian-width-value"),
+  grainEnvelopeGaussianWidthField: document.querySelector("#grain-envelope-gaussian-width-field"),
+  grainEnvelopeTukeyTaper: document.querySelector("#grain-envelope-tukey-taper"),
+  grainEnvelopeTukeyTaperValue: document.querySelector("#grain-envelope-tukey-taper-value"),
+  grainEnvelopeTukeyTaperField: document.querySelector("#grain-envelope-tukey-taper-field"),
   grainReverseToggle: document.querySelector("#grain-reverse-toggle"),
   grainUseNotePitchToggle: document.querySelector("#grain-use-note-pitch-toggle"),
   grainPlayOneShot: document.querySelector("#grain-play-one-shot"),
@@ -311,6 +322,7 @@ const SYNTH_WAVES = ["sine", "triangle", "sawtooth", "square"];
 const GRAIN_LOCATION_DEFAULT = "fixed";
 const GRAIN_SPACING_MAX_MS = 200;
 const GRAIN_ENVELOPE_MAX_MS = 100;
+const GRAIN_ENVELOPE_TYPES = ["adsr", "hann", "gaussian", "tukey"];
 const CHOP_PLAYHEAD_BEHAVIORS = ["fixed", "random", "note"];
 const CHOP_PLAYBACK_MODES = ["one-shot", "loop"];
 const CHOP_PLAYBACK_LENGTH_MIN_MS = 50;
@@ -701,10 +713,13 @@ function createDefaultTrackEnvelope() {
 
 function createDefaultGrainEnvelope() {
   return {
+    type: "hann",
     attack: 4,
     decay: 10,
     sustain: 100,
     release: 8,
+    gaussianWidth: 50,
+    tukeyTaper: 60,
   };
 }
 
@@ -812,10 +827,13 @@ function normalizeTrackEnvelope(source = {}, fallback = createDefaultTrackEnvelo
 
 function normalizeGrainEnvelope(source = {}, fallback = createDefaultGrainEnvelope()) {
   return {
+    type: GRAIN_ENVELOPE_TYPES.includes(source.type) ? source.type : fallback.type,
     attack: Math.round(clampNumber(source.attack, 0, GRAIN_ENVELOPE_MAX_MS, fallback.attack)),
     decay: Math.round(clampNumber(source.decay, 0, GRAIN_ENVELOPE_MAX_MS, fallback.decay)),
     sustain: Math.round(clampNumber(source.sustain, 0, 100, fallback.sustain)),
     release: Math.round(clampNumber(source.release, 0, GRAIN_ENVELOPE_MAX_MS, fallback.release)),
+    gaussianWidth: Math.round(clampNumber(source.gaussianWidth, 10, 100, fallback.gaussianWidth)),
+    tukeyTaper: Math.round(clampNumber(source.tukeyTaper, 5, 100, fallback.tukeyTaper)),
   };
 }
 
@@ -1022,7 +1040,39 @@ function applyAdToGain(gainParam, when, gateDuration, envelope, peakLevel = 1) {
   };
 }
 
-function applyGrainEnvelopeToGain(gainParam, when, grainDuration, envelope, peakLevel = 1) {
+function createGrainWindowCurve(type, envelope = {}, peakLevel = 1, sampleCount = 256) {
+  const curve = new Float32Array(sampleCount);
+  const peak = Math.max(0.0001, peakLevel);
+  const safeType = GRAIN_ENVELOPE_TYPES.includes(type) ? type : "hann";
+  const gaussianWidth = clampNumber(envelope.gaussianWidth, 10, 100, 50) / 100;
+  const gaussianSigma = 0.07 + gaussianWidth * 0.28;
+  const gaussianEdge = Math.exp(-0.5 * ((0.5 / gaussianSigma) ** 2));
+  const tukeyAlpha = clampNumber(envelope.tukeyTaper, 5, 100, 60) / 100;
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const x = sampleCount <= 1 ? 0 : index / (sampleCount - 1);
+    let value = 1;
+    if (safeType === "gaussian") {
+      const raw = Math.exp(-0.5 * (((x - 0.5) / gaussianSigma) ** 2));
+      value = Math.max(0, Math.min(1, (raw - gaussianEdge) / Math.max(0.0001, 1 - gaussianEdge)));
+    } else if (safeType === "tukey") {
+      if (x < tukeyAlpha / 2) {
+        value = 0.5 * (1 + Math.cos(Math.PI * ((2 * x) / tukeyAlpha - 1)));
+      } else if (x > 1 - tukeyAlpha / 2) {
+        value = 0.5 * (1 + Math.cos(Math.PI * ((2 * x) / tukeyAlpha - (2 / tukeyAlpha) + 1)));
+      }
+    } else {
+      value = 0.5 - 0.5 * Math.cos(2 * Math.PI * x);
+    }
+    curve[index] = Math.max(0, value * peak);
+  }
+
+  curve[0] = 0;
+  curve[curve.length - 1] = 0;
+  return curve;
+}
+
+function applyGrainAdsrEnvelopeToGain(gainParam, when, grainDuration, envelope, peakLevel = 1) {
   const duration = Math.max(0.001, Number(grainDuration) || 0.001);
   let attack = Math.max(0, (envelope?.attack ?? 0) / 1000);
   let decay = Math.max(0, (envelope?.decay ?? 0) / 1000);
@@ -1065,6 +1115,20 @@ function applyGrainEnvelopeToGain(gainParam, when, grainDuration, envelope, peak
   return {
     releaseStart,
     stopTime: envelopeEnd,
+  };
+}
+
+function applyGrainEnvelopeToGain(gainParam, when, grainDuration, envelope, peakLevel = 1) {
+  const duration = Math.max(0.001, Number(grainDuration) || 0.001);
+  const envelopeType = GRAIN_ENVELOPE_TYPES.includes(envelope?.type) ? envelope.type : "hann";
+  if (envelopeType === "adsr") return applyGrainAdsrEnvelopeToGain(gainParam, when, duration, envelope, peakLevel);
+
+  gainParam.cancelScheduledValues(when);
+  gainParam.setValueCurveAtTime(createGrainWindowCurve(envelopeType, envelope, peakLevel), when, duration);
+
+  return {
+    releaseStart: when + duration,
+    stopTime: when + duration,
   };
 }
 
@@ -1764,6 +1828,9 @@ class PlaybackLayer {
     sustainDuration = null,
     envelope = createDefaultTrackEnvelope(),
     grainEnvelope = null,
+    applyPatternEnvelope = true,
+    outputNode = null,
+    stopTime = null,
     sampleLayer = this.sampleLayer,
     processing = null,
     liveProcessing = false,
@@ -1786,7 +1853,10 @@ class PlaybackLayer {
 
     const voiceGain = this.audioContext.createGain();
     const gateDuration = loop ? Math.max(safeDuration, sustainDuration ?? safeDuration) : Math.max(safeDuration, sustainDuration ?? safeDuration);
-    const envelopeTiming = applyTrackEnvelopeToGain(voiceGain.gain, when, gateDuration, envelope, 0.75 * level);
+    const envelopeTiming = applyPatternEnvelope
+      ? applyTrackEnvelopeToGain(voiceGain.gain, when, gateDuration, envelope, 0.75 * level)
+      : { releaseStart: when + gateDuration, stopTime: when + gateDuration };
+    if (!applyPatternEnvelope) voiceGain.gain.setValueAtTime(Math.max(0.0001, level), when);
 
     const processingNodes = this.createSampleProcessingNodes(processing, { allowLiveReduction: liveProcessing });
     const grainGain = grainEnvelope ? this.audioContext.createGain() : null;
@@ -1804,7 +1874,7 @@ class PlaybackLayer {
     } else {
       processingNodes.output.connect(voiceGain);
     }
-    const busInput = this.trackBuses?.[trackIndex]?.input ?? this.output;
+    const busInput = outputNode ?? this.trackBuses?.[trackIndex]?.input ?? this.output;
     if (voicePan) {
       voicePan.pan.setValueAtTime(panValue, when);
       voiceGain.connect(voicePan);
@@ -1815,7 +1885,8 @@ class PlaybackLayer {
 
     const intendedOffset = effectiveReverse ? buffer.duration - offset - safeDuration : offset;
     const playbackOffset = Math.max(0, Math.min(maxOffset, intendedOffset));
-    const baseStopTime = envelopeTiming.stopTime;
+    const requestedStopTime = Number.isFinite(stopTime) ? Math.max(when + 0.001, stopTime) : null;
+    const baseStopTime = requestedStopTime ?? envelopeTiming.stopTime;
     const disconnectDelayMs = Math.ceil((baseStopTime - this.audioContext.currentTime + 0.1) * 1000);
     const getLiveVoice = () => {
       if (!Number.isInteger(voiceIndex)) return null;
@@ -2021,6 +2092,21 @@ class PlaybackLayer {
       : startTime;
     const basePosition = settings.grainLocation === "fixed" ? fixedPosition : slicePosition;
     const loop = settings.voicePlaybackMode && settings.voicePlaybackMode !== "one-shot";
+    const eventInput = this.audioContext.createGain();
+    const eventGain = this.audioContext.createGain();
+    const eventGateDuration = Math.max(0.001, Number(noteDuration) || grainDuration);
+    const eventTiming = applyTrackEnvelopeToGain(
+      eventGain.gain,
+      when,
+      eventGateDuration,
+      settings.envelope,
+      0.75 * (settings.level ?? 1),
+    );
+    const eventStopTime = eventTiming.stopTime;
+    const busInput = this.trackBuses?.[settings.trackIndex]?.input ?? this.output;
+    eventInput.connect(eventGain);
+    eventGain.connect(busInput);
+    const grainHandles = [];
 
     let triggered = false;
     for (let index = 0; index < grainCount; index += 1) {
@@ -2028,33 +2114,70 @@ class PlaybackLayer {
       const focusSign = index % 2 === 0 ? -1 : 1;
       const position = Math.max(startTime, Math.min(maxPosition, basePosition + (focusSign * focusMs) / 1000));
       const grainWhen = when + index * grainSpacingSeconds;
+      if (grainWhen >= eventStopTime) continue;
       const panDirection = index % 2 === 0 ? -1 : 1;
       const pan = spreadAmount <= 0 ? 0 : panDirection * spreadAmount;
-      triggered =
-        this.createVoice({
-          trackIndex: settings.trackIndex,
-          when: grainWhen,
-          offset: Math.max(0, position),
-          duration: Math.min(grainDuration, buffer.duration - position),
-          rate,
-          reverse: settings.reverse,
-          level: settings.level ?? 1,
-          loop,
-          loopStart: position,
-          loopEnd: Math.min(endTime, position + grainDuration),
-          sustainDuration: Math.max(grainDuration, noteDuration),
-          envelope: settings.envelope,
-          grainEnvelope: settings.grainEnvelope,
-          sampleLayer,
-          processing: settings.processing,
-          liveProcessing: true,
-          pan,
-          panDirection,
-          voiceIndex: settings.voiceIndex,
-        }) || triggered;
+      const handle = this.createVoice({
+        trackIndex: settings.trackIndex,
+        when: grainWhen,
+        offset: Math.max(0, position),
+        duration: Math.min(grainDuration, buffer.duration - position),
+        rate,
+        reverse: settings.reverse,
+        level: 1,
+        loop,
+        loopStart: position,
+        loopEnd: Math.min(endTime, position + grainDuration),
+        sustainDuration: Math.max(grainDuration, eventStopTime - grainWhen),
+        envelope: settings.envelope,
+        grainEnvelope: settings.grainEnvelope,
+        applyPatternEnvelope: false,
+        outputNode: eventInput,
+        stopTime: eventStopTime,
+        sampleLayer,
+        processing: settings.processing,
+        liveProcessing: true,
+        pan,
+        panDirection,
+        voiceIndex: settings.voiceIndex,
+      });
+      if (handle) {
+        grainHandles.push(handle);
+        triggered = true;
+      }
     }
 
-    return triggered;
+    if (!triggered) {
+      eventInput.disconnect?.();
+      eventGain.disconnect?.();
+      return false;
+    }
+
+    let stopped = false;
+    let eventDisconnected = false;
+    const disconnectEvent = () => {
+      if (eventDisconnected) return;
+      eventDisconnected = true;
+      try {
+        eventInput.disconnect?.();
+        eventGain.disconnect?.();
+      } catch {}
+    };
+    const eventHandle = {
+      stop: (stopWhen = this.audioContext.currentTime) => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          eventGain.gain.cancelScheduledValues(stopWhen);
+          eventGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
+        } catch {}
+        grainHandles.forEach((handle) => handle.stop?.(stopWhen));
+        window.setTimeout(disconnectEvent, Math.max(0, Math.ceil((stopWhen - this.audioContext.currentTime + 0.08) * 1000)));
+      },
+    };
+    const disconnectDelayMs = Math.ceil((eventStopTime - this.audioContext.currentTime + 0.1) * 1000);
+    window.setTimeout(disconnectEvent, Math.max(0, disconnectDelayMs));
+    return eventHandle;
   }
 
   triggerChop(track, when = this.audioContext.currentTime, noteDuration = 0.1, pitchOverride = null) {
@@ -8451,6 +8574,7 @@ function syncUi() {
   ui.grainStereoSpread.value = String(voice.grainStereoSpread);
   ui.grainStereoSpreadValue.textContent = `${Math.round(voice.grainStereoSpread)}%`;
   const grainEnvelope = normalizeGrainEnvelope(voice.grainEnvelope);
+  ui.grainEnvelopeType.value = grainEnvelope.type;
   ui.grainEnvelopeAttack.value = String(grainEnvelope.attack);
   ui.grainEnvelopeAttackValue.textContent = formatGrainEnvelopeMs(grainEnvelope.attack);
   ui.grainEnvelopeDecay.value = String(grainEnvelope.decay);
@@ -8459,6 +8583,17 @@ function syncUi() {
   ui.grainEnvelopeSustainValue.textContent = `${grainEnvelope.sustain}%`;
   ui.grainEnvelopeRelease.value = String(grainEnvelope.release);
   ui.grainEnvelopeReleaseValue.textContent = formatGrainEnvelopeMs(grainEnvelope.release);
+  ui.grainEnvelopeGaussianWidth.value = String(grainEnvelope.gaussianWidth);
+  ui.grainEnvelopeGaussianWidthValue.textContent = `${grainEnvelope.gaussianWidth}%`;
+  ui.grainEnvelopeTukeyTaper.value = String(grainEnvelope.tukeyTaper);
+  ui.grainEnvelopeTukeyTaperValue.textContent = `${grainEnvelope.tukeyTaper}%`;
+  const showAdsrEnvelopeControls = grainEnvelope.type === "adsr";
+  ui.grainEnvelopeAttackField?.classList.toggle("ui-hidden", !showAdsrEnvelopeControls);
+  ui.grainEnvelopeDecayField?.classList.toggle("ui-hidden", !showAdsrEnvelopeControls);
+  ui.grainEnvelopeSustainField?.classList.toggle("ui-hidden", !showAdsrEnvelopeControls);
+  ui.grainEnvelopeReleaseField?.classList.toggle("ui-hidden", !showAdsrEnvelopeControls);
+  ui.grainEnvelopeGaussianWidthField?.classList.toggle("ui-hidden", grainEnvelope.type !== "gaussian");
+  ui.grainEnvelopeTukeyTaperField?.classList.toggle("ui-hidden", grainEnvelope.type !== "tukey");
   ui.grainReverseToggle?.classList.toggle("active", voice.reverse);
   ui.grainReverseToggle?.setAttribute("aria-pressed", String(voice.reverse));
   ui.grainReverseToggle?.setAttribute("aria-label", `Reverse playback ${voice.reverse ? "on" : "off"}`);
@@ -9395,10 +9530,13 @@ ui.grainSize.addEventListener("input", () => updateSelectedVoice({ grainSize: Nu
 ui.grainSpacing.addEventListener("input", () => updateSelectedVoice({ grainSpacing: Number(ui.grainSpacing.value) }));
 ui.grainFocus.addEventListener("input", () => updateSelectedVoice({ grainFocus: Number(ui.grainFocus.value) }));
 ui.grainStereoSpread.addEventListener("input", () => updateSelectedVoice({ grainStereoSpread: Number(ui.grainStereoSpread.value) }));
+ui.grainEnvelopeType.addEventListener("change", () => updateSelectedVoiceGrainEnvelope({ type: ui.grainEnvelopeType.value }));
 ui.grainEnvelopeAttack.addEventListener("input", () => updateSelectedVoiceGrainEnvelope({ attack: Number(ui.grainEnvelopeAttack.value) }));
 ui.grainEnvelopeDecay.addEventListener("input", () => updateSelectedVoiceGrainEnvelope({ decay: Number(ui.grainEnvelopeDecay.value) }));
 ui.grainEnvelopeSustain.addEventListener("input", () => updateSelectedVoiceGrainEnvelope({ sustain: Number(ui.grainEnvelopeSustain.value) }));
 ui.grainEnvelopeRelease.addEventListener("input", () => updateSelectedVoiceGrainEnvelope({ release: Number(ui.grainEnvelopeRelease.value) }));
+ui.grainEnvelopeGaussianWidth.addEventListener("input", () => updateSelectedVoiceGrainEnvelope({ gaussianWidth: Number(ui.grainEnvelopeGaussianWidth.value) }));
+ui.grainEnvelopeTukeyTaper.addEventListener("input", () => updateSelectedVoiceGrainEnvelope({ tukeyTaper: Number(ui.grainEnvelopeTukeyTaper.value) }));
 ui.pitch?.addEventListener("input", () => updateSelectedVoice({ pitch: Number(ui.pitch.value) }));
 ui.synthWave.addEventListener("change", () => updateSelectedVoice({ synthWave: ui.synthWave.value }));
 ui.synthWaveShape.addEventListener("input", () => updateSelectedVoice({ synthWaveShape: Number(ui.synthWaveShape.value) }));

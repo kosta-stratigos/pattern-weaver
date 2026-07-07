@@ -159,7 +159,7 @@
                     <div class="control-grid grain-playback-grid">
                       <section class="control-group nested-control-group grain-playback-subgroup" aria-labelledby="grain-position-title">
                         <div class="control-group-head">
-                          <h3 id="grain-position-title">Position</h3>
+                          <h3 id="grain-position-title">Location &amp; Shape</h3>
                         </div>
                         <label id="grain-location-field" class="compact-field ui-hidden">
                           Playback Behavior
@@ -183,31 +183,54 @@
                           </div>
                           <div class="grain-envelope-grid">
                             <label class="compact-field">
+                              Shape
+                              <select id="grain-envelope-type">
+                                <option value="adsr">ADSR</option>
+                                <option value="hann">Hann</option>
+                                <option value="gaussian">Gaussian</option>
+                                <option value="tukey">Tukey</option>
+                              </select>
+                            </label>
+                            <label id="grain-envelope-attack-field" class="compact-field">
                               Attack
                               <div class="slider-row">
                                 <input id="grain-envelope-attack" type="range" min="0" max="100" step="1" value="4" />
                                 <span id="grain-envelope-attack-value" class="value-pill">4ms</span>
                               </div>
                             </label>
-                            <label class="compact-field">
+                            <label id="grain-envelope-decay-field" class="compact-field">
                               Decay
                               <div class="slider-row">
                                 <input id="grain-envelope-decay" type="range" min="0" max="100" step="1" value="10" />
                                 <span id="grain-envelope-decay-value" class="value-pill">10ms</span>
                               </div>
                             </label>
-                            <label class="compact-field">
+                            <label id="grain-envelope-sustain-field" class="compact-field">
                               Sustain
                               <div class="slider-row">
                                 <input id="grain-envelope-sustain" type="range" min="0" max="100" step="1" value="100" />
                                 <span id="grain-envelope-sustain-value" class="value-pill">100%</span>
                               </div>
                             </label>
-                            <label class="compact-field">
+                            <label id="grain-envelope-release-field" class="compact-field">
                               Release
                               <div class="slider-row">
                                 <input id="grain-envelope-release" type="range" min="0" max="100" step="1" value="8" />
                                 <span id="grain-envelope-release-value" class="value-pill">8ms</span>
+                              </div>
+                            </label>
+                            <label id="grain-envelope-gaussian-width-field" class="compact-field ui-hidden">
+                              Width
+                              <div class="slider-row">
+                                <input id="grain-envelope-gaussian-width" type="range" min="10" max="100" step="1" value="50" />
+                                <span id="grain-envelope-gaussian-width-value" class="value-pill">50%</span>
+                              </div>
+                            </label>
+                            <label id="grain-envelope-tukey-taper-field" class="compact-field ui-hidden">
+                              Taper
+                              <div class="slider-row">
+                                <input id="grain-envelope-tukey-taper" type="range" min="5" max="100" step="1" value="60" />
+                                <span id="grain-envelope-tukey-taper-value" class="value-pill">60%</span>
                               </div>
                             </label>
                           </div>
