@@ -1189,6 +1189,60 @@ input[type="range"]::-moz-range-thumb {
   flex: 1;
 }
 
+.clock-track-swing {
+  display: grid;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.clock-track-swing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.clock-track-swing-head h3 {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.track-swing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.track-swing-field {
+  display: grid;
+  grid-template-columns: auto minmax(42px, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--track-color-strong);
+  background: var(--track-color-soft);
+}
+
+.track-swing-name {
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.track-swing-value {
+  min-width: 34px;
+  padding: 3px 4px;
+  font-size: 0.66rem;
+}
+
 .micro-control-grid {
   gap: 10px;
 }

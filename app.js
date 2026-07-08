@@ -197,8 +197,7 @@ const ui = {
   swellAmountValue: document.querySelector("#swell-amount-value"),
   bpm: document.querySelector("#bpm"),
   bpmValue: document.querySelector("#bpm-value"),
-  swing: document.querySelector("#swing"),
-  swingValue: document.querySelector("#swing-value"),
+  trackSwingGrid: document.querySelector("#track-swing-grid"),
   composerGrid: document.querySelector("#composer-grid"),
   composerPlaybackToggle: document.querySelector("#composer-playback-toggle"),
   composerPlayOnce: document.querySelector("#composer-play-once"),
@@ -2554,6 +2553,7 @@ class TransportLayer {
         ? randomEveryNotes[Math.floor(Math.random() * randomEveryNotes.length)]
         : getTrackStepPitchMidi(track, cellIndex, patternForPlayback);
       const pitchSemitones = pitchMidi - PITCH_LANE_REFERENCE_MIDI;
+      const trackTriggerTime = when + getTrackSwingOffset(track, baseStep, patternForPlayback, this.state.bpm);
 
       if (envelopeType === "hold") {
         if (!stepActive) return;
@@ -2563,7 +2563,7 @@ class TransportLayer {
           return;
         }
         this.playbackLayer.stopTrackSustainedVoice(track.id - 1);
-        const handle = this.playbackLayer.triggerHeldTrack(track, when, sliceIndex, { pitchMidi, pitchSemitones });
+        const handle = this.playbackLayer.triggerHeldTrack(track, trackTriggerTime, sliceIndex, { pitchMidi, pitchSemitones });
         this.playbackLayer.trackSustainedVoices[track.id - 1] = handle;
         if (playbackState) {
           playbackState.lastHeldPitchMidi = pitchMidi;
@@ -2579,12 +2579,12 @@ class TransportLayer {
         const loopPitchMidi = playbackState?.lastLoopingPitchMidi ?? pitchMidi ?? getTrackPitchMidi(track);
         const loopingPitchSemitones = loopPitchMidi - PITCH_LANE_REFERENCE_MIDI;
         const nextTriggerTime = playbackState?.nextLoopingTriggerTime ?? -1;
-        if (when + 0.0001 < nextTriggerTime) return;
-        const loopHandle = this.playbackLayer.triggerTrack(track, when, sliceIndex, noteDuration, {
+        if (trackTriggerTime + 0.0001 < nextTriggerTime) return;
+        const loopHandle = this.playbackLayer.triggerTrack(track, trackTriggerTime, sliceIndex, noteDuration, {
           pitchMidi: loopPitchMidi,
           pitchSemitones: loopingPitchSemitones,
         });
-        const envelopeTiming = getTrackEnvelopeTiming(when, noteDuration, patternForPlayback.envelope);
+        const envelopeTiming = getTrackEnvelopeTiming(trackTriggerTime, noteDuration, patternForPlayback.envelope);
         if (playbackState) {
           playbackState.nextLoopingTriggerTime = envelopeTiming.stopTime;
           playbackState.lastTriggeredPatternIndex = cellIndex;
@@ -2601,18 +2601,13 @@ class TransportLayer {
         playbackState.lastHeldPitchMidi = null;
       }
       indicateTrackPlayback(track, sliceIndex);
-      this.playbackLayer.triggerTrack(track, when, sliceIndex, noteDuration, { pitchMidi, pitchSemitones });
+      this.playbackLayer.triggerTrack(track, trackTriggerTime, sliceIndex, noteDuration, { pitchMidi, pitchSemitones });
     });
     if (this.onStep) this.onStep(stepIndex);
   }
 
   advance() {
-    const baseStepDuration = 60 / this.state.bpm / 8;
-    const swingFactor = (this.state.swing / 100) * 0.5;
-    const sixteenthIndex = Math.floor(this.currentStep / 2);
-    const isOffbeatSixteenth = sixteenthIndex % 2 === 1;
-    const stepDuration = baseStepDuration * (isOffbeatSixteenth ? 1 - swingFactor : 1 + swingFactor);
-    this.nextStepTime += stepDuration;
+    this.nextStepTime += getTransportStepDuration(this.state.bpm);
     if (this.state.composer.enabled) {
       this.state.composer.currentSlotStep += 1;
       if (this.state.composer.currentSlotStep >= this.state.composer.currentSlotLengthSteps) {
@@ -2644,6 +2639,26 @@ function getDecodeAudioContext() {
   return state.decodeAudioContext;
 }
 
+function getTransportStepDuration(bpm = state.bpm) {
+  const safeBpm = Math.max(1, Number(bpm) || 112);
+  return 60 / safeBpm / 8;
+}
+
+function getTrackStepDurationSeconds(track, pattern = getTrackPattern(track), bpm = state.bpm) {
+  const activePattern = pattern ?? getTrackPattern(track);
+  const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
+  const patternBaseSteps = getTrackPatternBaseSteps(track, activePattern);
+  return getTransportStepDuration(bpm) * (patternBaseSteps / visibleCellCount);
+}
+
+function getTrackSwingOffset(track, baseStep, pattern = getTrackPattern(track), bpm = state.bpm) {
+  const swingFactor = (clampUnitPercent(track?.swing ?? state.swing, 0) / 100) * 0.5;
+  if (swingFactor <= 0) return 0;
+  const slot = getTrackScheduleSlot(track, baseStep, pattern);
+  if (slot % 2 === 0) return 0;
+  return getTrackStepDurationSeconds(track, pattern, bpm) * swingFactor;
+}
+
 function createTrack(id) {
   return {
     id,
@@ -2654,6 +2669,7 @@ function createTrack(id) {
     scaleMode: "chromatic",
     muted: false,
     solo: false,
+    swing: 0,
     volume: 0.85,
     pan: 0,
     patterns: Array.from({ length: TRACK_PATTERN_COUNT }, (_, index) => createTrackPattern(index + 1, index + id - 1)),
@@ -4547,6 +4563,7 @@ function normalizeTrack(index, source = {}) {
     scaleMode: normalizeScaleMode(source.scaleMode, fallback.scaleMode),
     muted: Boolean(source.muted),
     solo: Boolean(source.solo),
+    swing: Math.round(clampUnitPercent(source.swing, fallback.swing)),
     volume: Math.max(0, Math.min(1, Number(source.volume) || fallback.volume)),
     pan: clampPan(source.pan ?? fallback.pan),
     patterns: Array.from({ length: TRACK_PATTERN_COUNT }, (_, patternIndex) =>
@@ -4744,6 +4761,7 @@ function createSessionSnapshot() {
       scaleMode: track.scaleMode,
       muted: track.muted,
       solo: track.solo,
+      swing: track.swing,
       volume: track.volume,
       pan: track.pan,
       patterns: track.patterns.map((pattern) => ({
@@ -4827,7 +4845,11 @@ function applyStoredSession(snapshot = readStoredSession()) {
 
   if (Array.isArray(stored.tracks)) {
     state.tracks = Array.from({ length: TRACK_COUNT }, (_, index) =>
-      normalizeTrack(index, { ...stored.tracks[index], voiceIndex: stored.tracks[index]?.voiceIndex ?? index }),
+      normalizeTrack(index, {
+        ...stored.tracks[index],
+        voiceIndex: stored.tracks[index]?.voiceIndex ?? index,
+        swing: stored.tracks[index]?.swing ?? stored.swing,
+      }),
     );
   } else {
     const legacyTrack = normalizeTrack(0, {
@@ -7756,6 +7778,43 @@ function renderTrackSelector() {
   applyTrackColor(ui.voiceSelect, TRACK_COLORS[state.selectedVoiceIndex % TRACK_COLORS.length]);
 }
 
+function renderTrackSwingControls() {
+  if (!ui.trackSwingGrid) return;
+  ui.trackSwingGrid.innerHTML = "";
+  state.tracks.forEach((track, index) => {
+    const field = document.createElement("label");
+    field.className = "track-swing-field";
+    applyTrackColor(field, track.color);
+    field.setAttribute("aria-label", `Swing ${formatTrackName(track, index)}`);
+
+    const name = document.createElement("span");
+    name.className = "track-swing-name";
+    name.textContent = `T${track.id}`;
+
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = "0";
+    input.max = "100";
+    input.value = String(Math.round(clampUnitPercent(track.swing)));
+
+    const value = document.createElement("span");
+    value.className = "value-pill track-swing-value";
+    value.textContent = `${Math.round(clampUnitPercent(track.swing))}%`;
+
+    input.addEventListener("input", () => {
+      track.swing = Math.round(clampUnitPercent(input.value, track.swing));
+      input.value = String(track.swing);
+      value.textContent = `${track.swing}%`;
+      updateRangeFill(input);
+      writeStoredSession();
+    });
+
+    field.append(name, input, value);
+    ui.trackSwingGrid.append(field);
+    updateRangeFill(input);
+  });
+}
+
 function renderMixer() {
   ui.mixerGrid.innerHTML = "";
   state.tracks.forEach((track, index) => {
@@ -8675,8 +8734,7 @@ function syncUi() {
   ui.synthSettingsGroup.classList.toggle("ui-hidden", !synthMode);
   ui.bpm.value = String(state.bpm);
   ui.bpmValue.textContent = String(state.bpm);
-  ui.swing.value = String(state.swing);
-  ui.swingValue.textContent = `${state.swing}%`;
+  renderTrackSwingControls();
   ui.mixVolume.value = String(Math.round(state.mixVolume * 100));
   ui.mixVolumeValue.textContent = `${Math.round(state.mixVolume * 100)}%`;
   renderPitchLanes();
@@ -9511,11 +9569,6 @@ ui.sessionClearOverlay?.addEventListener("click", (event) => {
 });
 ui.bpm.addEventListener("input", () => {
   state.bpm = Number(ui.bpm.value);
-  syncUi();
-  writeStoredSession();
-});
-ui.swing.addEventListener("input", () => {
-  state.swing = Math.max(0, Math.min(100, Number(ui.swing.value)));
   syncUi();
   writeStoredSession();
 });
