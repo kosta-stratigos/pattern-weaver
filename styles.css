@@ -834,6 +834,17 @@ h2 {
   gap: 6px;
 }
 
+.grain-envelope-visualizer {
+  width: 100%;
+  height: 92px;
+  display: block;
+  border: 1px solid rgba(126, 205, 185, 0.14);
+  border-radius: var(--pane-radius);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 48%),
+    rgba(255, 255, 255, 0.018);
+}
+
 .chop-settings-stack {
   gap: 12px;
   grid-template-columns: minmax(520px, 2fr) minmax(280px, 0.9fr);
@@ -1951,6 +1962,27 @@ input[type="range"]::-moz-range-thumb {
 .pattern-settings-envelope {
   grid-column: 3;
   grid-row: 1 / span 2;
+}
+
+.envelope-type-stack,
+.track-envelope-mode-stack {
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  padding: 9px;
+  border: 1px solid rgba(126, 205, 185, 0.14);
+  border-radius: var(--pane-radius);
+  background: rgba(255, 255, 255, 0.014);
+}
+
+.track-envelope-mode-label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.track-envelope-mode-group {
+  min-height: 34px;
 }
 
 .pattern-settings-playback > .track-settings-grid {

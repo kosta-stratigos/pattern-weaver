@@ -122,6 +122,7 @@ const ui = {
   grainEnvelopeTukeyTaper: document.querySelector("#grain-envelope-tukey-taper"),
   grainEnvelopeTukeyTaperValue: document.querySelector("#grain-envelope-tukey-taper-value"),
   grainEnvelopeTukeyTaperField: document.querySelector("#grain-envelope-tukey-taper-field"),
+  grainEnvelopeVisualizer: document.querySelector("#grain-envelope-visualizer"),
   grainReverseToggle: document.querySelector("#grain-reverse-toggle"),
   grainUseNotePitchToggle: document.querySelector("#grain-use-note-pitch-toggle"),
   grainPlayOneShot: document.querySelector("#grain-play-one-shot"),
@@ -228,6 +229,16 @@ const ui = {
   trackEnvelopeRelease: document.querySelector("#track-envelope-release"),
   trackEnvelopeReleaseValue: document.querySelector("#track-envelope-release-value"),
   trackEnvelopeReleaseField: document.querySelector("#track-envelope-release-field"),
+  trackEnvelopeModeButtons: Array.from(document.querySelectorAll("[data-track-envelope-mode]")),
+  trackEnvelopeLoopSpeed: document.querySelector("#track-envelope-loop-speed"),
+  trackEnvelopeLoopSpeedValue: document.querySelector("#track-envelope-loop-speed-value"),
+  trackEnvelopeLoopSpeedField: document.querySelector("#track-envelope-loop-speed-field"),
+  trackEnvelopeGaussianWidth: document.querySelector("#track-envelope-gaussian-width"),
+  trackEnvelopeGaussianWidthValue: document.querySelector("#track-envelope-gaussian-width-value"),
+  trackEnvelopeGaussianWidthField: document.querySelector("#track-envelope-gaussian-width-field"),
+  trackEnvelopeTukeyTaper: document.querySelector("#track-envelope-tukey-taper"),
+  trackEnvelopeTukeyTaperValue: document.querySelector("#track-envelope-tukey-taper-value"),
+  trackEnvelopeTukeyTaperField: document.querySelector("#track-envelope-tukey-taper-field"),
   trackEnvelopeVisualizer: document.querySelector("#track-envelope-visualizer"),
   trackStepFillType: document.querySelector("#track-step-fill-type"),
   trackStepFillAmount: document.querySelector("#track-step-fill-amount"),
@@ -316,12 +327,32 @@ const PATTERN_VARIATION_LOCK_MODES = ["bar-one", "first-active", "none"];
 const PATTERN_SWITCH_MODES = ["instant", "on-one"];
 const TRACK_STEP_FILL_TYPES = ["none", "even", "random"];
 const TRACK_PITCH_FILL_TYPES = ["single", "rising", "falling", "random-once", "random-every"];
-const TRACK_ENVELOPE_TYPES = ["adsr", "ad", "looping", "hold"];
+const ENVELOPE_WINDOW_TYPES = ["hann", "gaussian", "tukey"];
+const TRACK_ENVELOPE_TYPES = ["adsr", ...ENVELOPE_WINDOW_TYPES];
+const TRACK_ENVELOPE_MODES = ["step", "hold", "loop"];
+const TRACK_ENVELOPE_LOOP_SPEED_MIN_HZ = 0.25;
+const TRACK_ENVELOPE_LOOP_SPEED_MAX_HZ = 16;
+const TRACK_ENVELOPE_LOOP_SPEED_DEFAULT_HZ = 4;
 const SYNTH_WAVES = ["sine", "triangle", "sawtooth", "square"];
 const GRAIN_LOCATION_DEFAULT = "fixed";
 const GRAIN_SPACING_MAX_MS = 200;
 const GRAIN_ENVELOPE_MAX_MS = 100;
-const GRAIN_ENVELOPE_TYPES = ["adsr", "hann", "gaussian", "tukey"];
+const GRAIN_ENVELOPE_TYPES = ["adsr", ...ENVELOPE_WINDOW_TYPES];
+const ENVELOPE_WINDOW_PROFILES = {
+  pattern: {
+    allowedTypes: TRACK_ENVELOPE_TYPES,
+    allowedModes: TRACK_ENVELOPE_MODES,
+    fallbackType: "adsr",
+    fallbackMode: "step",
+    legacyTypeMap: { ad: "hann", hold: "adsr", looping: "adsr" },
+    legacyModeMap: { hold: "hold", looping: "loop" },
+  },
+  grain: {
+    allowedTypes: GRAIN_ENVELOPE_TYPES,
+    fallbackType: "hann",
+    legacyTypeMap: { ad: "hann", hold: "adsr", looping: "adsr" },
+  },
+};
 const CHOP_PLAYHEAD_BEHAVIORS = ["fixed", "random", "note"];
 const CHOP_PLAYBACK_MODES = ["one-shot", "loop"];
 const CHOP_PLAYBACK_LENGTH_MIN_MS = 50;
@@ -702,11 +733,15 @@ function createDefaultPatternVariationSettings() {
 
 function createDefaultTrackEnvelope() {
   return {
+    mode: "step",
     type: "adsr",
     attack: 10,
     decay: 80,
     sustain: 70,
     release: 120,
+    gaussianWidth: 50,
+    tukeyTaper: 60,
+    loopSpeed: TRACK_ENVELOPE_LOOP_SPEED_DEFAULT_HZ,
   };
 }
 
@@ -814,26 +849,98 @@ function normalizePatternVariationSettings(source = {}, fallback = createDefault
   return { lockMode, amount };
 }
 
-function normalizeTrackEnvelope(source = {}, fallback = createDefaultTrackEnvelope()) {
-  return {
-    type: TRACK_ENVELOPE_TYPES.includes(source.type) ? source.type : fallback.type,
-    attack: Math.max(0, Math.min(2000, Number.isFinite(Number(source.attack)) ? Number(source.attack) : fallback.attack)),
-    decay: Math.max(0, Math.min(2000, Number.isFinite(Number(source.decay)) ? Number(source.decay) : fallback.decay)),
-    sustain: Math.max(0, Math.min(100, Number.isFinite(Number(source.sustain)) ? Number(source.sustain) : fallback.sustain)),
-    release: Math.max(0, Math.min(3000, Number.isFinite(Number(source.release)) ? Number(source.release) : fallback.release)),
+function getEnvelopeWindowProfile(profileKey = "pattern") {
+  return ENVELOPE_WINDOW_PROFILES[profileKey] ?? ENVELOPE_WINDOW_PROFILES.pattern;
+}
+
+function resolveEnvelopeWindowType(type, fallbackType, profileKey = "pattern") {
+  const profile = getEnvelopeWindowProfile(profileKey);
+  const mappedType = profile.legacyTypeMap?.[type] ?? type;
+  if (profile.allowedTypes.includes(mappedType)) return mappedType;
+  if (profile.allowedTypes.includes(fallbackType)) return fallbackType;
+  return profile.fallbackType;
+}
+
+function resolveEnvelopeWindowMode(mode, sourceType, fallbackMode = "step", profileKey = "pattern") {
+  const profile = getEnvelopeWindowProfile(profileKey);
+  if (!profile.allowedModes) return "step";
+  const mappedMode = profile.legacyModeMap?.[sourceType] ?? mode;
+  if (profile.allowedModes.includes(mappedMode)) return mappedMode;
+  if (profile.allowedModes.includes(fallbackMode)) return fallbackMode;
+  return profile.fallbackMode ?? "step";
+}
+
+function getEnvelopeMode(envelope, profileKey = "pattern") {
+  const profile = getEnvelopeWindowProfile(profileKey);
+  return resolveEnvelopeWindowMode(
+    envelope?.mode,
+    envelope?.type,
+    envelope?.mode ?? profile.fallbackMode,
+    profileKey,
+  );
+}
+
+function getEnvelopeLoopSpeed(envelope) {
+  return clampNumber(
+    envelope?.loopSpeed,
+    TRACK_ENVELOPE_LOOP_SPEED_MIN_HZ,
+    TRACK_ENVELOPE_LOOP_SPEED_MAX_HZ,
+    TRACK_ENVELOPE_LOOP_SPEED_DEFAULT_HZ,
+  );
+}
+
+function getEnvelopeLoopPeriodSeconds(envelope) {
+  return 1 / getEnvelopeLoopSpeed(envelope);
+}
+
+function normalizeEnvelopeWindow(source = {}, fallback = createDefaultTrackEnvelope(), profileKey = "pattern") {
+  const profile = getEnvelopeWindowProfile(profileKey);
+  const fallbackType = resolveEnvelopeWindowType(fallback.type, profile.fallbackType, profileKey);
+  const fallbackMode = resolveEnvelopeWindowMode(fallback.mode, fallback.type, profile.fallbackMode, profileKey);
+  const maxMs = profileKey === "grain"
+    ? { attack: GRAIN_ENVELOPE_MAX_MS, decay: GRAIN_ENVELOPE_MAX_MS, release: GRAIN_ENVELOPE_MAX_MS }
+    : { attack: 2000, decay: 2000, release: 3000 };
+  const rounded = profileKey === "grain";
+  const normalizeTime = (key) => {
+    const value = clampNumber(source[key], 0, maxMs[key], fallback[key] ?? 0);
+    return rounded ? Math.round(value) : value;
   };
+
+  const normalized = {
+    type: resolveEnvelopeWindowType(source.type, fallbackType, profileKey),
+    attack: normalizeTime("attack"),
+    decay: normalizeTime("decay"),
+    sustain: rounded
+      ? Math.round(clampNumber(source.sustain, 0, 100, fallback.sustain ?? 100))
+      : clampNumber(source.sustain, 0, 100, fallback.sustain ?? 100),
+    release: normalizeTime("release"),
+    gaussianWidth: rounded
+      ? Math.round(clampNumber(source.gaussianWidth, 10, 100, fallback.gaussianWidth ?? 50))
+      : clampNumber(source.gaussianWidth, 10, 100, fallback.gaussianWidth ?? 50),
+    tukeyTaper: rounded
+      ? Math.round(clampNumber(source.tukeyTaper, 5, 100, fallback.tukeyTaper ?? 60))
+      : clampNumber(source.tukeyTaper, 5, 100, fallback.tukeyTaper ?? 60),
+  };
+
+  if (profileKey === "pattern") {
+    normalized.mode = resolveEnvelopeWindowMode(source.mode, source.type, fallbackMode, profileKey);
+    normalized.loopSpeed = clampNumber(
+      source.loopSpeed,
+      TRACK_ENVELOPE_LOOP_SPEED_MIN_HZ,
+      TRACK_ENVELOPE_LOOP_SPEED_MAX_HZ,
+      fallback.loopSpeed ?? TRACK_ENVELOPE_LOOP_SPEED_DEFAULT_HZ,
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeTrackEnvelope(source = {}, fallback = createDefaultTrackEnvelope()) {
+  return normalizeEnvelopeWindow(source, fallback, "pattern");
 }
 
 function normalizeGrainEnvelope(source = {}, fallback = createDefaultGrainEnvelope()) {
-  return {
-    type: GRAIN_ENVELOPE_TYPES.includes(source.type) ? source.type : fallback.type,
-    attack: Math.round(clampNumber(source.attack, 0, GRAIN_ENVELOPE_MAX_MS, fallback.attack)),
-    decay: Math.round(clampNumber(source.decay, 0, GRAIN_ENVELOPE_MAX_MS, fallback.decay)),
-    sustain: Math.round(clampNumber(source.sustain, 0, 100, fallback.sustain)),
-    release: Math.round(clampNumber(source.release, 0, GRAIN_ENVELOPE_MAX_MS, fallback.release)),
-    gaussianWidth: Math.round(clampNumber(source.gaussianWidth, 10, 100, fallback.gaussianWidth)),
-    tukeyTaper: Math.round(clampNumber(source.tukeyTaper, 5, 100, fallback.tukeyTaper)),
-  };
+  return normalizeEnvelopeWindow(source, fallback, "grain");
 }
 
 function normalizeTrackPattern(index, source = {}, fallback = createTrackPattern(index + 1)) {
@@ -1011,38 +1118,10 @@ function applyAdsrToGain(gainParam, when, gateDuration, envelope, peakLevel = 1)
   };
 }
 
-function applyAdToGain(gainParam, when, gateDuration, envelope, peakLevel = 1) {
-  const attack = Math.max(0, (envelope?.attack ?? 0) / 1000);
-  const decay = Math.max(0, (envelope?.decay ?? 0) / 1000);
-  const peak = Math.max(0.0001, peakLevel);
-  const attackEnd = when + attack;
-  const noteEnd = when + Math.max(0.001, gateDuration);
-  const decayStart = Math.max(attackEnd, noteEnd - decay);
-
-  gainParam.cancelScheduledValues(when);
-  gainParam.setValueAtTime(0.0001, when);
-  if (attack > 0) {
-    gainParam.linearRampToValueAtTime(peak, attackEnd);
-  } else {
-    gainParam.setValueAtTime(peak, when);
-  }
-  gainParam.setValueAtTime(peak, decayStart);
-  if (decay > 0) {
-    gainParam.linearRampToValueAtTime(0.0001, noteEnd);
-  } else {
-    gainParam.setValueAtTime(0.0001, noteEnd);
-  }
-
-  return {
-    releaseStart: decayStart,
-    stopTime: noteEnd,
-  };
-}
-
-function createGrainWindowCurve(type, envelope = {}, peakLevel = 1, sampleCount = 256) {
+function createEnvelopeWindowCurve(type, envelope = {}, peakLevel = 1, sampleCount = 256) {
   const curve = new Float32Array(sampleCount);
   const peak = Math.max(0.0001, peakLevel);
-  const safeType = GRAIN_ENVELOPE_TYPES.includes(type) ? type : "hann";
+  const safeType = ENVELOPE_WINDOW_TYPES.includes(type) ? type : "hann";
   const gaussianWidth = clampNumber(envelope.gaussianWidth, 10, 100, 50) / 100;
   const gaussianSigma = 0.07 + gaussianWidth * 0.28;
   const gaussianEdge = Math.exp(-0.5 * ((0.5 / gaussianSigma) ** 2));
@@ -1117,36 +1196,48 @@ function applyGrainAdsrEnvelopeToGain(gainParam, when, grainDuration, envelope, 
   };
 }
 
+function isEnvelopeWindowType(envelopeType) {
+  return ENVELOPE_WINDOW_TYPES.includes(envelopeType);
+}
+
+function applyEnvelopeWindowToGain(gainParam, when, durationSeconds, envelope, peakLevel = 1, profileKey = "pattern") {
+  const duration = Math.max(0.001, Number(durationSeconds) || 0.001);
+  const envelopeType = getEnvelopeType(envelope, profileKey);
+  if (isEnvelopeWindowType(envelopeType)) {
+    gainParam.cancelScheduledValues(when);
+    gainParam.setValueCurveAtTime(createEnvelopeWindowCurve(envelopeType, envelope, peakLevel), when, duration);
+    return {
+      releaseStart: when + duration,
+      stopTime: when + duration,
+    };
+  }
+
+  if (profileKey === "grain" || getEnvelopeMode(envelope, profileKey) === "loop") {
+    return applyGrainAdsrEnvelopeToGain(gainParam, when, duration, envelope, peakLevel);
+  }
+  return applyAdsrToGain(gainParam, when, duration, envelope, peakLevel);
+}
+
 function applyGrainEnvelopeToGain(gainParam, when, grainDuration, envelope, peakLevel = 1) {
-  const duration = Math.max(0.001, Number(grainDuration) || 0.001);
-  const envelopeType = GRAIN_ENVELOPE_TYPES.includes(envelope?.type) ? envelope.type : "hann";
-  if (envelopeType === "adsr") return applyGrainAdsrEnvelopeToGain(gainParam, when, duration, envelope, peakLevel);
-
-  gainParam.cancelScheduledValues(when);
-  gainParam.setValueCurveAtTime(createGrainWindowCurve(envelopeType, envelope, peakLevel), when, duration);
-
-  return {
-    releaseStart: when + duration,
-    stopTime: when + duration,
-  };
+  return applyEnvelopeWindowToGain(gainParam, when, grainDuration, envelope, peakLevel, "grain");
 }
 
 function applyTrackEnvelopeToGain(gainParam, when, gateDuration, envelope, peakLevel = 1) {
-  const envelopeType = TRACK_ENVELOPE_TYPES.includes(envelope?.type) ? envelope.type : "adsr";
-  if (envelopeType === "ad") return applyAdToGain(gainParam, when, gateDuration, envelope, peakLevel);
-  return applyAdsrToGain(gainParam, when, gateDuration, envelope, peakLevel);
+  return applyEnvelopeWindowToGain(gainParam, when, gateDuration, envelope, peakLevel, "pattern");
 }
 
-function getEnvelopeType(envelope) {
-  return TRACK_ENVELOPE_TYPES.includes(envelope?.type) ? envelope.type : "adsr";
+function getEnvelopeType(envelope, profileKey = "pattern") {
+  const profile = getEnvelopeWindowProfile(profileKey);
+  return resolveEnvelopeWindowType(envelope?.type, profile.fallbackType, profileKey);
 }
 
 function getTrackEnvelopeTiming(when, gateDuration, envelope) {
   const envelopeType = getEnvelopeType(envelope);
-  if (envelopeType === "ad") {
+  if (isEnvelopeWindowType(envelopeType) || getEnvelopeMode(envelope) === "loop") {
+    const duration = Math.max(0.001, Number(gateDuration) || 0.001);
     return {
-      releaseStart: Math.max(when, when + Math.max(0.001, gateDuration) - Math.max(0, (envelope?.decay ?? 0) / 1000)),
-      stopTime: when + Math.max(0.001, gateDuration),
+      releaseStart: when + duration,
+      stopTime: when + duration,
     };
   }
   const attack = Math.max(0, (envelope?.attack ?? 0) / 1000);
@@ -1157,6 +1248,17 @@ function getTrackEnvelopeTiming(when, gateDuration, envelope) {
     releaseStart,
     stopTime: releaseStart + release,
   };
+}
+
+function createTrackHoldBypassEnvelope() {
+  return normalizeTrackEnvelope({
+    mode: "step",
+    type: "adsr",
+    attack: 0,
+    decay: 0,
+    sustain: 100,
+    release: 120,
+  }, createDefaultTrackEnvelope());
 }
 
 function formatSynthWaveLabel(wave) {
@@ -1171,6 +1273,11 @@ function formatFilterFrequencyValue(value) {
 
 function formatGrainEnvelopeMs(value) {
   return `${Math.round(clampNumber(value, 0, GRAIN_ENVELOPE_MAX_MS, 0))}ms`;
+}
+
+function formatEnvelopeLoopSpeed(value) {
+  const speed = getEnvelopeLoopSpeed({ loopSpeed: value });
+  return `${speed.toFixed(speed >= 10 ? 1 : 2)}Hz`;
 }
 
 function formatGrainSpacing(value) {
@@ -2417,6 +2524,7 @@ class PlaybackLayer {
   triggerHeldTrack(track, when = this.audioContext.currentTime, sliceIndex = null, pitchOverride = null) {
     const playbackTrack = getTrackPlaybackSettings(track);
     const sustainDuration = 60;
+    const holdEnvelope = createTrackHoldBypassEnvelope();
     if (playbackTrack.mode === "synth") {
       return this.triggerSynth(
         {
@@ -2430,7 +2538,7 @@ class PlaybackLayer {
           filterType: playbackTrack.synthFilterType,
           filterFrequency: playbackTrack.synthFilterFrequency,
           filterQ: playbackTrack.synthFilterQ,
-          envelope: normalizeTrackEnvelope({ ...playbackTrack.envelope, sustain: 100, release: 120 }, playbackTrack.envelope),
+          envelope: holdEnvelope,
           voiceIndex: playbackTrack.voiceIndex,
         },
         when,
@@ -2455,7 +2563,7 @@ class PlaybackLayer {
           grainLocation: playbackTrack.grainLocation,
           voicePlacement: playbackTrack.voicePlacement,
           voicePlaybackMode: "loop",
-          envelope: normalizeTrackEnvelope({ ...playbackTrack.envelope, sustain: 100, release: 120 }, playbackTrack.envelope),
+          envelope: holdEnvelope,
           grainEnvelope: playbackTrack.grainEnvelope,
           sampleRegionStart: playbackTrack.sampleRegionStart,
           sampleRegionEnd: playbackTrack.sampleRegionEnd,
@@ -2469,7 +2577,7 @@ class PlaybackLayer {
     return this.triggerChop(
       {
         ...playbackTrack,
-        envelope: normalizeTrackEnvelope({ ...playbackTrack.envelope, sustain: 100, release: 120 }, playbackTrack.envelope),
+        envelope: holdEnvelope,
       },
       when,
       sustainDuration,
@@ -2538,15 +2646,21 @@ class TransportLayer {
         applyPatternVariationsAtPatternBoundary(track, patternForPlayback);
       }
       const cellIndex = resolveTrackPatternStep(track, { advance: true, pattern: patternForPlayback });
-      const envelopeType = getEnvelopeType(patternForPlayback.envelope);
+      const envelopeMode = getEnvelopeMode(patternForPlayback.envelope);
       if (playbackState) {
         playbackState.lastTriggeredPatternIndex = -1;
         playbackState.lastTriggeredPitchMidi = null;
       }
-      const stepActive = Boolean(patternForPlayback.pattern[cellIndex]);
-      if (stepActive && Math.random() * 100 > patternForPlayback.stepProbability) return;
+      const rawStepActive = Boolean(patternForPlayback.pattern[cellIndex]);
+      const stepActive = rawStepActive && Math.random() * 100 <= patternForPlayback.stepProbability;
       if (!isTrackAudible(track)) return;
-      const sliceIndex = resolvePlaybackSliceIndex(track, { advance: true });
+      let resolvedSliceIndex = null;
+      const getSliceIndex = () => {
+        if (resolvedSliceIndex == null) {
+          resolvedSliceIndex = resolvePlaybackSliceIndex(track, { advance: true });
+        }
+        return resolvedSliceIndex;
+      };
       const noteDuration = getTrackTriggerDuration(track, patternForPlayback);
       const randomEveryNotes = patternForPlayback.pitchFill.type === "random-every" ? getTrackPitchFillNotes(track, patternForPlayback) : null;
       const pitchMidi = randomEveryNotes
@@ -2555,13 +2669,14 @@ class TransportLayer {
       const pitchSemitones = pitchMidi - PITCH_LANE_REFERENCE_MIDI;
       const trackTriggerTime = when + getTrackSwingOffset(track, baseStep, patternForPlayback, this.state.bpm);
 
-      if (envelopeType === "hold") {
+      if (envelopeMode === "hold") {
         if (!stepActive) return;
         if (playbackState && Number.isFinite(playbackState.lastHeldPitchMidi) && playbackState.lastHeldPitchMidi === pitchMidi) {
           playbackState.lastTriggeredPatternIndex = cellIndex;
           playbackState.lastTriggeredPitchMidi = pitchMidi;
           return;
         }
+        const sliceIndex = getSliceIndex();
         this.playbackLayer.stopTrackSustainedVoice(track.id - 1);
         const handle = this.playbackLayer.triggerHeldTrack(track, trackTriggerTime, sliceIndex, { pitchMidi, pitchSemitones });
         this.playbackLayer.trackSustainedVoices[track.id - 1] = handle;
@@ -2574,27 +2689,38 @@ class TransportLayer {
         return;
       }
 
-      if (envelopeType === "looping") {
+      if (envelopeMode === "loop") {
         if (stepActive && playbackState) playbackState.lastLoopingPitchMidi = pitchMidi;
         const loopPitchMidi = playbackState?.lastLoopingPitchMidi ?? pitchMidi ?? getTrackPitchMidi(track);
         const loopingPitchSemitones = loopPitchMidi - PITCH_LANE_REFERENCE_MIDI;
-        const nextTriggerTime = playbackState?.nextLoopingTriggerTime ?? -1;
-        if (trackTriggerTime + 0.0001 < nextTriggerTime) return;
-        const loopHandle = this.playbackLayer.triggerTrack(track, trackTriggerTime, sliceIndex, noteDuration, {
-          pitchMidi: loopPitchMidi,
-          pitchSemitones: loopingPitchSemitones,
-        });
-        const envelopeTiming = getTrackEnvelopeTiming(trackTriggerTime, noteDuration, patternForPlayback.envelope);
+        const loopPeriod = getEnvelopeLoopPeriodSeconds(patternForPlayback.envelope);
+        const scheduleWindowEnd = trackTriggerTime + getTransportStepDuration(this.state.bpm) + 0.0001;
+        let nextTriggerTime = playbackState?.nextLoopingTriggerTime ?? trackTriggerTime;
+        if (!Number.isFinite(nextTriggerTime) || nextTriggerTime < trackTriggerTime - loopPeriod) {
+          nextTriggerTime = trackTriggerTime;
+        }
+        let triggeredLoop = false;
+        while (nextTriggerTime < scheduleWindowEnd) {
+          const sliceIndex = getSliceIndex();
+          this.playbackLayer.triggerTrack(track, nextTriggerTime, sliceIndex, loopPeriod, {
+            pitchMidi: loopPitchMidi,
+            pitchSemitones: loopingPitchSemitones,
+          });
+          nextTriggerTime += loopPeriod;
+          triggeredLoop = true;
+        }
         if (playbackState) {
-          playbackState.nextLoopingTriggerTime = envelopeTiming.stopTime;
+          playbackState.nextLoopingTriggerTime = nextTriggerTime;
           playbackState.lastTriggeredPatternIndex = cellIndex;
           playbackState.lastTriggeredPitchMidi = loopPitchMidi;
+          playbackState.lastHeldPitchMidi = null;
         }
-        indicateTrackPlayback(track, sliceIndex);
-        return loopHandle;
+        if (triggeredLoop) indicateTrackPlayback(track, sliceIndex);
+        return;
       }
 
       if (!stepActive) return;
+      const sliceIndex = getSliceIndex();
       if (playbackState) {
         playbackState.lastTriggeredPatternIndex = cellIndex;
         playbackState.lastTriggeredPitchMidi = pitchMidi;
@@ -5630,71 +5756,94 @@ function ensureSynthScopeAnimation() {
   state.synthScopeAnimationFrameId = window.requestAnimationFrame(drawSynthScopeFrame);
 }
 
-function buildTrackEnvelopeCycle(envelope) {
-  const envelopeType = getEnvelopeType(envelope);
-  if (envelopeType === "hold") {
+function buildEnvelopeWindowVisualizerCycle(envelope, profileKey = "pattern", durationMs = null) {
+  const envelopeType = getEnvelopeType(envelope, profileKey);
+  const duration = Math.max(1, Number(durationMs) || 1);
+  if (isEnvelopeWindowType(envelopeType)) {
+    const curve = createEnvelopeWindowCurve(envelopeType, envelope, 1, 128);
     return {
-      duration: 1,
+      duration,
+      points: Array.from(curve, (value, index) => ({
+        time: (index / Math.max(1, curve.length - 1)) * duration,
+        value: Math.max(0, Math.min(1, value)),
+      })),
+    };
+  }
+
+  if (profileKey === "grain") {
+    let attack = Math.max(0, envelope?.attack ?? 0);
+    let decay = Math.max(0, envelope?.decay ?? 0);
+    let release = Math.max(0, envelope?.release ?? 0);
+    const edgeDuration = attack + decay + release;
+    if (edgeDuration > duration) {
+      const scale = duration / edgeDuration;
+      attack *= scale;
+      decay *= scale;
+      release *= scale;
+    }
+
+    const sustain = Math.max(0, Math.min(1, (envelope?.sustain ?? 100) / 100));
+    const attackEnd = attack;
+    const decayEnd = attackEnd + decay;
+    const releaseStart = Math.max(decayEnd, duration - release);
+    return {
+      duration,
       points: [
         { time: 0, value: 0 },
-        { time: 0, value: 1 },
-        { time: 1, value: 1 },
-        { time: 1, value: 0 },
+        { time: attackEnd, value: 1 },
+        { time: decayEnd, value: sustain },
+        { time: releaseStart, value: sustain },
+        { time: duration, value: 0 },
       ],
     };
   }
 
   const attack = Math.max(0, envelope?.attack ?? 0);
   const decay = Math.max(0, envelope?.decay ?? 0);
-  if (envelopeType === "ad") {
-    const hold = Math.max(140, Math.min(520, (attack + decay) * 0.25));
-    const duration = Math.max(1, attack + hold + decay);
-    return {
-      duration,
-      points: [
-        { time: 0, value: 0 },
-        { time: attack, value: 1 },
-        { time: attack + hold, value: 1 },
-        { time: duration, value: 0 },
-      ],
-    };
-  }
-
   const release = Math.max(0, envelope?.release ?? 0);
   const sustain = Math.max(0, Math.min(1, (envelope?.sustain ?? 100) / 100));
   const sustainHold = Math.max(180, Math.min(640, (attack + decay + release) * 0.35));
-  const duration = Math.max(1, attack + decay + sustainHold + release);
+  const envelopeDuration = Math.max(1, attack + decay + sustainHold + release);
   return {
-    duration,
+    duration: envelopeDuration,
     points: [
       { time: 0, value: 0 },
       { time: attack, value: 1 },
       { time: attack + decay, value: sustain },
       { time: attack + decay + sustainHold, value: sustain },
-      { time: duration, value: 0 },
+      { time: envelopeDuration, value: 0 },
     ],
   };
 }
 
 function buildTrackEnvelopeVisualizerPoints(envelope) {
-  const envelopeType = getEnvelopeType(envelope);
-  const cycle = buildTrackEnvelopeCycle(envelope);
-  if (envelopeType !== "looping") {
-    return { duration: cycle.duration, points: cycle.points };
+  const envelopeMode = getEnvelopeMode(envelope);
+  if (envelopeMode === "hold") {
+    return {
+      duration: 1,
+      points: [
+        { time: 0, value: 1 },
+        { time: 1, value: 1 },
+      ],
+    };
   }
 
-  const gap = Math.max(70, cycle.duration * 0.08);
-  return {
-    duration: cycle.duration * 2 + gap,
-    points: [
-      ...cycle.points,
-      { time: cycle.duration + gap, value: 0 },
-      ...cycle.points.map((point) => ({
-        time: point.time + cycle.duration + gap,
-        value: point.value,
-      })),
-    ],
-  };
+  if (envelopeMode === "loop") {
+    const cycleDuration = Math.max(1, 1000 / getEnvelopeLoopSpeed(envelope));
+    const cycle = buildEnvelopeWindowVisualizerCycle(envelope, "grain", cycleDuration);
+    const cycleCount = 3;
+    return {
+      duration: cycle.duration * cycleCount,
+      points: Array.from({ length: cycleCount }, (_, cycleIndex) =>
+        cycle.points.map((point) => ({
+          time: point.time + cycle.duration * cycleIndex,
+          value: point.value,
+        }))).flat(),
+    };
+  }
+
+  const cycle = buildEnvelopeWindowVisualizerCycle(envelope, "pattern");
+  return { duration: cycle.duration, points: cycle.points };
 }
 
 function drawTrackEnvelopeVisualizer(envelope) {
@@ -5765,6 +5914,88 @@ function drawTrackEnvelopeVisualizer(envelope) {
   context.lineCap = "round";
   context.shadowColor = "rgba(79, 196, 184, 0.35)";
   context.shadowBlur = 8;
+  context.beginPath();
+  points.forEach((point, index) => {
+    const canvasPoint = toCanvasPoint(point);
+    if (index === 0) context.moveTo(canvasPoint.x, canvasPoint.y);
+    else context.lineTo(canvasPoint.x, canvasPoint.y);
+  });
+  context.stroke();
+  context.shadowBlur = 0;
+}
+
+function buildGrainEnvelopeVisualizerPoints(envelope, grainSizeMs) {
+  return buildEnvelopeWindowVisualizerCycle(normalizeGrainEnvelope(envelope), "grain", grainSizeMs);
+}
+
+function drawGrainEnvelopeVisualizer(envelope, grainSizeMs) {
+  if (!(ui.grainEnvelopeVisualizer instanceof HTMLCanvasElement)) return;
+  const context = ui.grainEnvelopeVisualizer.getContext("2d");
+  if (!context) return;
+
+  const { width, height } = ui.grainEnvelopeVisualizer;
+  const insetX = 12;
+  const insetTop = 10;
+  const insetBottom = 14;
+  const graphWidth = width - insetX * 2;
+  const graphHeight = height - insetTop - insetBottom;
+  const zeroY = insetTop + graphHeight;
+  const style = getComputedStyle(ui.grainEnvelopeVisualizer);
+  const trackColor = style.getPropertyValue("--accent").trim() || "#4fc4b8";
+  const accentColor = style.getPropertyValue("--accent-3").trim() || "#ffaf5f";
+  const shape = buildGrainEnvelopeVisualizerPoints(envelope ?? createDefaultGrainEnvelope(), grainSizeMs);
+  const points = shape.points;
+  const duration = Math.max(1, shape.duration);
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "rgba(255, 255, 255, 0.012)";
+  context.fillRect(0, 0, width, height);
+
+  context.strokeStyle = "rgba(126, 205, 185, 0.1)";
+  context.lineWidth = 1;
+  context.beginPath();
+  for (let marker = 0; marker <= 3; marker += 1) {
+    const y = insetTop + (graphHeight * marker) / 3;
+    context.moveTo(insetX, y);
+    context.lineTo(width - insetX, y);
+  }
+  for (let marker = 0; marker <= 6; marker += 1) {
+    const x = insetX + (graphWidth * marker) / 6;
+    context.moveTo(x, insetTop);
+    context.lineTo(x, zeroY);
+  }
+  context.stroke();
+
+  const toCanvasPoint = (point) => ({
+    x: insetX + (point.time / duration) * graphWidth,
+    y: insetTop + (1 - point.value) * graphHeight,
+  });
+
+  context.fillStyle = "rgba(79, 196, 184, 0.08)";
+  context.beginPath();
+  points.forEach((point, index) => {
+    const canvasPoint = toCanvasPoint(point);
+    if (index === 0) context.moveTo(canvasPoint.x, zeroY);
+    context.lineTo(canvasPoint.x, canvasPoint.y);
+  });
+  const lastPoint = toCanvasPoint(points[points.length - 1]);
+  context.lineTo(lastPoint.x, zeroY);
+  context.closePath();
+  context.fill();
+
+  context.strokeStyle = accentColor;
+  context.lineWidth = 1.15;
+  context.beginPath();
+  context.moveTo(insetX, zeroY);
+  context.lineTo(width - insetX, zeroY);
+  context.stroke();
+
+  context.strokeStyle = trackColor;
+  context.lineWidth = 2.25;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.shadowColor = "rgba(79, 196, 184, 0.32)";
+  context.shadowBlur = 7;
   context.beginPath();
   points.forEach((point, index) => {
     const canvasPoint = toCanvasPoint(point);
@@ -6395,6 +6626,14 @@ function syncVariationLockButtons(buttons, lockMode) {
   });
 }
 
+function syncTrackEnvelopeModeButtons(mode) {
+  ui.trackEnvelopeModeButtons.forEach((button) => {
+    const nextActive = button.dataset.trackEnvelopeMode === mode;
+    button.classList.toggle("active", nextActive);
+    button.setAttribute("aria-pressed", String(nextActive));
+  });
+}
+
 function syncTrackSettingsOverlay() {
   if (!(ui.trackSettingsGroup instanceof HTMLElement)) return;
   const track = state.tracks[state.selectedTrackIndex] ?? getSelectedTrack();
@@ -6452,7 +6691,12 @@ function syncTrackSettingsOverlay() {
   ui.trackPitchVariationAmount.value = String(activePattern.pitchVariation.amount);
   ui.trackPitchVariationAmountValue.textContent = `${activePattern.pitchVariation.amount}%`;
   syncVariationLockButtons(ui.trackPitchVariationLockButtons, activePattern.pitchVariation.lockMode);
-  ui.trackEnvelopeType.value = getEnvelopeType(activePattern.envelope);
+  const envelopeMode = getEnvelopeMode(activePattern.envelope);
+  const envelopeType = getEnvelopeType(activePattern.envelope);
+  syncTrackEnvelopeModeButtons(envelopeMode);
+  ui.trackEnvelopeType.value = envelopeType;
+  ui.trackEnvelopeLoopSpeed.value = String(getEnvelopeLoopSpeed(activePattern.envelope));
+  ui.trackEnvelopeLoopSpeedValue.textContent = formatEnvelopeLoopSpeed(activePattern.envelope.loopSpeed);
   ui.trackEnvelopeAttack.value = String(activePattern.envelope.attack);
   ui.trackEnvelopeAttackValue.textContent = String(activePattern.envelope.attack);
   ui.trackEnvelopeDecay.value = String(activePattern.envelope.decay);
@@ -6461,11 +6705,19 @@ function syncTrackSettingsOverlay() {
   ui.trackEnvelopeSustainValue.textContent = `${activePattern.envelope.sustain}%`;
   ui.trackEnvelopeRelease.value = String(activePattern.envelope.release);
   ui.trackEnvelopeReleaseValue.textContent = String(activePattern.envelope.release);
-  const envelopeType = getEnvelopeType(activePattern.envelope);
-  ui.trackEnvelopeAttackField?.classList.toggle("ui-hidden", envelopeType === "hold");
-  ui.trackEnvelopeDecayField?.classList.toggle("ui-hidden", envelopeType === "hold");
-  ui.trackEnvelopeSustainField?.classList.toggle("ui-hidden", !["adsr", "looping"].includes(envelopeType));
-  ui.trackEnvelopeReleaseField?.classList.toggle("ui-hidden", !["adsr", "looping"].includes(envelopeType));
+  ui.trackEnvelopeGaussianWidth.value = String(activePattern.envelope.gaussianWidth);
+  ui.trackEnvelopeGaussianWidthValue.textContent = `${Math.round(activePattern.envelope.gaussianWidth)}%`;
+  ui.trackEnvelopeTukeyTaper.value = String(activePattern.envelope.tukeyTaper);
+  ui.trackEnvelopeTukeyTaperValue.textContent = `${Math.round(activePattern.envelope.tukeyTaper)}%`;
+  const isHoldMode = envelopeMode === "hold";
+  const showAdsrControls = envelopeType === "adsr" && !isHoldMode;
+  ui.trackEnvelopeLoopSpeedField?.classList.toggle("ui-hidden", envelopeMode !== "loop");
+  ui.trackEnvelopeAttackField?.classList.toggle("ui-hidden", !showAdsrControls);
+  ui.trackEnvelopeDecayField?.classList.toggle("ui-hidden", !showAdsrControls);
+  ui.trackEnvelopeSustainField?.classList.toggle("ui-hidden", !showAdsrControls);
+  ui.trackEnvelopeReleaseField?.classList.toggle("ui-hidden", !showAdsrControls);
+  ui.trackEnvelopeGaussianWidthField?.classList.toggle("ui-hidden", isHoldMode || envelopeType !== "gaussian");
+  ui.trackEnvelopeTukeyTaperField?.classList.toggle("ui-hidden", isHoldMode || envelopeType !== "tukey");
   ui.trackStepFillType.value = activePattern.stepFill.type;
   ui.trackStepFillAmount.value = String(activePattern.stepFill.amount);
   ui.trackStepFillAmountValue.textContent = `${activePattern.stepFill.amount}%`;
@@ -8653,6 +8905,7 @@ function syncUi() {
   ui.grainEnvelopeReleaseField?.classList.toggle("ui-hidden", !showAdsrEnvelopeControls);
   ui.grainEnvelopeGaussianWidthField?.classList.toggle("ui-hidden", grainEnvelope.type !== "gaussian");
   ui.grainEnvelopeTukeyTaperField?.classList.toggle("ui-hidden", grainEnvelope.type !== "tukey");
+  drawGrainEnvelopeVisualizer(grainEnvelope, voice.grainSize);
   ui.grainReverseToggle?.classList.toggle("active", voice.reverse);
   ui.grainReverseToggle?.setAttribute("aria-pressed", String(voice.reverse));
   ui.grainReverseToggle?.setAttribute("aria-label", `Reverse playback ${voice.reverse ? "on" : "off"}`);
@@ -8817,6 +9070,16 @@ function updateSelectedTrackPatternVariation(key, patch) {
       ...currentPattern[key],
       ...patch,
     }, currentPattern[key]),
+  });
+}
+
+function updateSelectedTrackEnvelope(patch) {
+  const currentEnvelope = getSelectedTrackPattern().envelope;
+  updateSelectedTrackPattern({
+    envelope: normalizeTrackEnvelope({
+      ...currentEnvelope,
+      ...patch,
+    }, currentEnvelope),
   });
 }
 
@@ -9353,46 +9616,17 @@ ui.trackPitchVariationLockButtons.forEach((button) => {
 ui.trackPitchVariationAmount.addEventListener("input", () => updateSelectedTrackPatternVariation("pitchVariation", {
   amount: Number(ui.trackPitchVariationAmount.value),
 }));
-ui.trackEnvelopeType.addEventListener("change", () => {
-  updateSelectedTrackPattern({
-    envelope: normalizeTrackEnvelope({
-      ...getSelectedTrackPattern().envelope,
-      type: ui.trackEnvelopeType.value,
-    }, getSelectedTrackPattern().envelope),
-  });
+ui.trackEnvelopeModeButtons.forEach((button) => {
+  button.addEventListener("click", () => updateSelectedTrackEnvelope({ mode: button.dataset.trackEnvelopeMode }));
 });
-ui.trackEnvelopeAttack.addEventListener("input", () => {
-  updateSelectedTrackPattern({
-    envelope: normalizeTrackEnvelope({
-      ...getSelectedTrackPattern().envelope,
-      attack: Number(ui.trackEnvelopeAttack.value),
-    }, getSelectedTrackPattern().envelope),
-  });
-});
-ui.trackEnvelopeDecay.addEventListener("input", () => {
-  updateSelectedTrackPattern({
-    envelope: normalizeTrackEnvelope({
-      ...getSelectedTrackPattern().envelope,
-      decay: Number(ui.trackEnvelopeDecay.value),
-    }, getSelectedTrackPattern().envelope),
-  });
-});
-ui.trackEnvelopeSustain.addEventListener("input", () => {
-  updateSelectedTrackPattern({
-    envelope: normalizeTrackEnvelope({
-      ...getSelectedTrackPattern().envelope,
-      sustain: Number(ui.trackEnvelopeSustain.value),
-    }, getSelectedTrackPattern().envelope),
-  });
-});
-ui.trackEnvelopeRelease.addEventListener("input", () => {
-  updateSelectedTrackPattern({
-    envelope: normalizeTrackEnvelope({
-      ...getSelectedTrackPattern().envelope,
-      release: Number(ui.trackEnvelopeRelease.value),
-    }, getSelectedTrackPattern().envelope),
-  });
-});
+ui.trackEnvelopeType.addEventListener("change", () => updateSelectedTrackEnvelope({ type: ui.trackEnvelopeType.value }));
+ui.trackEnvelopeLoopSpeed.addEventListener("input", () => updateSelectedTrackEnvelope({ loopSpeed: Number(ui.trackEnvelopeLoopSpeed.value) }));
+ui.trackEnvelopeAttack.addEventListener("input", () => updateSelectedTrackEnvelope({ attack: Number(ui.trackEnvelopeAttack.value) }));
+ui.trackEnvelopeDecay.addEventListener("input", () => updateSelectedTrackEnvelope({ decay: Number(ui.trackEnvelopeDecay.value) }));
+ui.trackEnvelopeSustain.addEventListener("input", () => updateSelectedTrackEnvelope({ sustain: Number(ui.trackEnvelopeSustain.value) }));
+ui.trackEnvelopeRelease.addEventListener("input", () => updateSelectedTrackEnvelope({ release: Number(ui.trackEnvelopeRelease.value) }));
+ui.trackEnvelopeGaussianWidth.addEventListener("input", () => updateSelectedTrackEnvelope({ gaussianWidth: Number(ui.trackEnvelopeGaussianWidth.value) }));
+ui.trackEnvelopeTukeyTaper.addEventListener("input", () => updateSelectedTrackEnvelope({ tukeyTaper: Number(ui.trackEnvelopeTukeyTaper.value) }));
 ui.patternVoiceSelect.addEventListener("change", () => {
   updateSelectedTrack({ voiceIndex: Number(ui.patternVoiceSelect.value) });
 });
