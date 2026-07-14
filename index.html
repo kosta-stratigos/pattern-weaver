@@ -151,164 +151,154 @@
                     </div>
                   </section>
 
-                  <section id="voice-playback-settings-group" class="control-group nested-control-group grain-playback-group" aria-labelledby="voice-group-title">
-                    <div class="control-group-head">
-                      <h3 id="voice-group-title">Playback</h3>
-                    </div>
-                    <div class="control-grid grain-playback-grid">
-                      <section class="control-group nested-control-group grain-playback-subgroup" aria-labelledby="grain-position-title">
-                        <div class="control-group-head">
-                          <h3 id="grain-position-title">Location &amp; Shape</h3>
+                  <div id="voice-playback-settings-group" class="grain-playback-group grain-voice-controls-grid" aria-label="Grain voice controls">
+                    <section class="control-group nested-control-group grain-playback-subgroup grain-playback-controls-group" aria-labelledby="grain-playback-title">
+                      <div class="control-group-head">
+                        <h3 id="grain-playback-title">Playback</h3>
+                      </div>
+                      <label id="grain-location-field" class="compact-field ui-hidden">
+                        Playback Behavior
+                        <select id="grain-location">
+                          <option value="fixed">Fixed</option>
+                          <option value="sequential">Sequential</option>
+                          <option value="sweep">Sweep</option>
+                          <option value="random">Random</option>
+                        </select>
+                      </label>
+                      <label class="compact-field" id="voice-placement-field">
+                        Playback Center
+                        <div class="slider-row">
+                          <input id="voice-placement" type="range" min="0" max="100" value="50" />
+                          <span id="voice-placement-value" class="value-pill">50%</span>
                         </div>
-                        <label id="grain-location-field" class="compact-field ui-hidden">
-                          Playback Behavior
-                          <select id="grain-location">
-                            <option value="fixed">Fixed</option>
-                            <option value="sequential">Sequential</option>
-                            <option value="sweep">Sweep</option>
-                            <option value="random">Random</option>
-                          </select>
-                        </label>
-                        <label class="compact-field" id="voice-placement-field">
-                          Playback Center
-                          <div class="slider-row">
-                            <input id="voice-placement" type="range" min="0" max="100" value="50" />
-                            <span id="voice-placement-value" class="value-pill">50%</span>
-                          </div>
-                        </label>
-                        <section class="control-group nested-control-group grain-envelope-group" aria-labelledby="grain-envelope-title">
-                          <div class="control-group-head">
-                            <h3 id="grain-envelope-title">Grain Envelope / Window</h3>
-                          </div>
-                          <canvas id="grain-envelope-visualizer" class="grain-envelope-visualizer" width="520" height="92" aria-label="Grain envelope shape visualizer"></canvas>
-                          <div class="envelope-type-stack grain-envelope-type-stack">
-                            <div class="grain-envelope-grid">
-                              <label class="compact-field">
-                                Type
-                                <select id="grain-envelope-type">
-                                  <option value="adsr">ADSR</option>
-                                  <option value="hann">Hann</option>
-                                  <option value="gaussian">Gaussian</option>
-                                  <option value="tukey">Tukey</option>
-                                </select>
-                              </label>
-                              <label id="grain-envelope-attack-field" class="compact-field">
-                                Attack
-                                <div class="slider-row">
-                                  <input id="grain-envelope-attack" type="range" min="0" max="100" step="1" value="4" />
-                                  <span id="grain-envelope-attack-value" class="value-pill">4ms</span>
-                                </div>
-                              </label>
-                              <label id="grain-envelope-decay-field" class="compact-field">
-                                Decay
-                                <div class="slider-row">
-                                  <input id="grain-envelope-decay" type="range" min="0" max="100" step="1" value="10" />
-                                  <span id="grain-envelope-decay-value" class="value-pill">10ms</span>
-                                </div>
-                              </label>
-                              <label id="grain-envelope-sustain-field" class="compact-field">
-                                Sustain
-                                <div class="slider-row">
-                                  <input id="grain-envelope-sustain" type="range" min="0" max="100" step="1" value="100" />
-                                  <span id="grain-envelope-sustain-value" class="value-pill">100%</span>
-                                </div>
-                              </label>
-                              <label id="grain-envelope-release-field" class="compact-field">
-                                Release
-                                <div class="slider-row">
-                                  <input id="grain-envelope-release" type="range" min="0" max="100" step="1" value="8" />
-                                  <span id="grain-envelope-release-value" class="value-pill">8ms</span>
-                                </div>
-                              </label>
-                              <label id="grain-envelope-gaussian-width-field" class="compact-field ui-hidden">
-                                Width
-                                <div class="slider-row">
-                                  <input id="grain-envelope-gaussian-width" type="range" min="10" max="100" step="1" value="50" />
-                                  <span id="grain-envelope-gaussian-width-value" class="value-pill">50%</span>
-                                </div>
-                              </label>
-                              <label id="grain-envelope-tukey-taper-field" class="compact-field ui-hidden">
-                                Taper
-                                <div class="slider-row">
-                                  <input id="grain-envelope-tukey-taper" type="range" min="5" max="100" step="1" value="60" />
-                                  <span id="grain-envelope-tukey-taper-value" class="value-pill">60%</span>
-                                </div>
-                              </label>
+                      </label>
+                      <div class="grain-toggle-stack">
+                        <div class="chop-toggle-control">
+                          <span class="composer-playback-label">Reverse</span>
+                          <button id="grain-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off">
+                            <span class="composer-slot-switch-track" aria-hidden="true">
+                              <span class="composer-slot-switch-thumb"></span>
+                            </span>
+                          </button>
+                        </div>
+                        <div class="chop-toggle-control">
+                          <span class="composer-playback-label">Note Pitch</span>
+                          <button id="grain-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="true" aria-label="Use note pitch on">
+                            <span class="composer-slot-switch-track" aria-hidden="true">
+                              <span class="composer-slot-switch-thumb"></span>
+                            </span>
+                          </button>
+                        </div>
+                        <div class="voice-operation-button-group grain-playback-mode-group" role="group" aria-label="Grain playback mode">
+                          <button id="grain-play-one-shot" type="button">1 Shot</button>
+                          <button id="grain-play-loop" type="button">Loop</button>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section class="control-group nested-control-group grain-playback-subgroup" aria-labelledby="grain-cloud-title">
+                      <div class="control-group-head">
+                        <h3 id="grain-cloud-title">Grains</h3>
+                      </div>
+                      <label class="compact-field">
+                        Number
+                        <div class="slider-row">
+                          <input id="grain-count" type="range" min="1" max="12" step="1" value="4" />
+                          <span id="grain-count-value" class="value-pill">4</span>
+                        </div>
+                      </label>
+                      <label class="compact-field">
+                        Size (ms)
+                        <div class="slider-row">
+                          <input id="grain-size" type="range" min="1" max="100" step="1" value="40" />
+                          <span id="grain-size-value" class="value-pill">40ms</span>
+                        </div>
+                      </label>
+                      <label class="compact-field">
+                        Grain Playback Spacing
+                        <div class="slider-row">
+                          <input id="grain-spacing" type="range" min="0" max="200" step="1" value="0" />
+                          <span id="grain-spacing-value" class="value-pill">0ms</span>
+                        </div>
+                      </label>
+                      <label class="compact-field">
+                        Focus (ms)
+                        <div class="slider-row">
+                          <input id="grain-focus" type="range" min="1" max="100" step="1" value="18" />
+                          <span id="grain-focus-value" class="value-pill">18ms</span>
+                        </div>
+                      </label>
+                      <label class="compact-field">
+                        Stereo Spread
+                        <div class="slider-row">
+                          <input id="grain-stereo-spread" type="range" min="0" max="100" step="1" value="0" />
+                          <span id="grain-stereo-spread-value" class="value-pill">0%</span>
+                        </div>
+                      </label>
+                    </section>
+
+                    <section class="control-group nested-control-group grain-playback-subgroup grain-envelope-group" aria-labelledby="grain-envelope-title">
+                      <div class="control-group-head">
+                        <h3 id="grain-envelope-title">Envelope / Window</h3>
+                      </div>
+                      <canvas id="grain-envelope-visualizer" class="grain-envelope-visualizer" width="520" height="92" aria-label="Grain envelope shape visualizer"></canvas>
+                      <div class="envelope-type-stack grain-envelope-type-stack">
+                        <div class="grain-envelope-grid">
+                          <label class="compact-field">
+                            Type
+                            <select id="grain-envelope-type">
+                              <option value="adsr">ADSR</option>
+                              <option value="hann">Hann</option>
+                              <option value="gaussian">Gaussian</option>
+                              <option value="tukey">Tukey</option>
+                            </select>
+                          </label>
+                          <label id="grain-envelope-attack-field" class="compact-field">
+                            Attack
+                            <div class="slider-row">
+                              <input id="grain-envelope-attack" type="range" min="0" max="100" step="1" value="4" />
+                              <span id="grain-envelope-attack-value" class="value-pill">4ms</span>
                             </div>
-                          </div>
-                        </section>
-                      </section>
-
-                      <section class="control-group nested-control-group grain-playback-subgroup" aria-labelledby="grain-cloud-title">
-                        <div class="control-group-head">
-                          <h3 id="grain-cloud-title">Grains</h3>
+                          </label>
+                          <label id="grain-envelope-decay-field" class="compact-field">
+                            Decay
+                            <div class="slider-row">
+                              <input id="grain-envelope-decay" type="range" min="0" max="100" step="1" value="10" />
+                              <span id="grain-envelope-decay-value" class="value-pill">10ms</span>
+                            </div>
+                          </label>
+                          <label id="grain-envelope-sustain-field" class="compact-field">
+                            Sustain
+                            <div class="slider-row">
+                              <input id="grain-envelope-sustain" type="range" min="0" max="100" step="1" value="100" />
+                              <span id="grain-envelope-sustain-value" class="value-pill">100%</span>
+                            </div>
+                          </label>
+                          <label id="grain-envelope-release-field" class="compact-field">
+                            Release
+                            <div class="slider-row">
+                              <input id="grain-envelope-release" type="range" min="0" max="100" step="1" value="8" />
+                              <span id="grain-envelope-release-value" class="value-pill">8ms</span>
+                            </div>
+                          </label>
+                          <label id="grain-envelope-gaussian-width-field" class="compact-field ui-hidden">
+                            Width
+                            <div class="slider-row">
+                              <input id="grain-envelope-gaussian-width" type="range" min="10" max="100" step="1" value="50" />
+                              <span id="grain-envelope-gaussian-width-value" class="value-pill">50%</span>
+                            </div>
+                          </label>
+                          <label id="grain-envelope-tukey-taper-field" class="compact-field ui-hidden">
+                            Taper
+                            <div class="slider-row">
+                              <input id="grain-envelope-tukey-taper" type="range" min="5" max="100" step="1" value="60" />
+                              <span id="grain-envelope-tukey-taper-value" class="value-pill">60%</span>
+                            </div>
+                          </label>
                         </div>
-                        <label class="compact-field">
-                          Number
-                          <div class="slider-row">
-                            <input id="grain-count" type="range" min="1" max="12" step="1" value="4" />
-                            <span id="grain-count-value" class="value-pill">4</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Size (ms)
-                          <div class="slider-row">
-                            <input id="grain-size" type="range" min="1" max="100" step="1" value="40" />
-                            <span id="grain-size-value" class="value-pill">40ms</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Grain Playback Spacing
-                          <div class="slider-row">
-                            <input id="grain-spacing" type="range" min="0" max="200" step="1" value="0" />
-                            <span id="grain-spacing-value" class="value-pill">0ms</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Focus (ms)
-                          <div class="slider-row">
-                            <input id="grain-focus" type="range" min="1" max="100" step="1" value="18" />
-                            <span id="grain-focus-value" class="value-pill">18ms</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Stereo Spread
-                          <div class="slider-row">
-                            <input id="grain-stereo-spread" type="range" min="0" max="100" step="1" value="0" />
-                            <span id="grain-stereo-spread-value" class="value-pill">0%</span>
-                          </div>
-                        </label>
-                      </section>
-
-                      <section class="control-group nested-control-group grain-playback-subgroup grain-playback-options-subgroup" aria-labelledby="grain-options-title">
-                        <div class="control-group-head">
-                          <h3 id="grain-options-title">Mode</h3>
-                        </div>
-                        <div class="grain-toggle-stack">
-                          <div class="chop-toggle-control">
-                            <span class="composer-playback-label">Reverse</span>
-                            <button id="grain-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off">
-                              <span class="composer-slot-switch-track" aria-hidden="true">
-                                <span class="composer-slot-switch-thumb"></span>
-                              </span>
-                            </button>
-                          </div>
-                          <div class="chop-toggle-control">
-                            <span class="composer-playback-label">Note Pitch</span>
-                            <button id="grain-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="true" aria-label="Use note pitch on">
-                              <span class="composer-slot-switch-track" aria-hidden="true">
-                                <span class="composer-slot-switch-thumb"></span>
-                              </span>
-                            </button>
-                          </div>
-                          <div class="voice-operation-button-group grain-playback-mode-group" role="group" aria-label="Grain playback mode">
-                            <button id="grain-play-one-shot" type="button">1 Shot</button>
-                            <button id="grain-play-loop" type="button">Loop</button>
-                          </div>
-                        </div>
-                      </section>
-                    </div>
-                  </section>
+                      </div>
+                    </section>
+                  </div>
 
                   <section class="control-group nested-control-group grain-processing-group" aria-labelledby="grain-processing-title">
                     <div class="control-group-head">
