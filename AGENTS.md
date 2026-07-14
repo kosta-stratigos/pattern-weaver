@@ -8,6 +8,14 @@ editing, granular playback, chop triggering, and BPM-synced sequencing.
 Keep the project lightweight unless there is a strong reason to add dependencies.
 Prefer focused prototype improvements over broad architectural refactors.
 
+The user is currently the only user. Backwards compatibility with saved voices and
+saved sessions is not very important; prefer keeping the codebase clean and lean over
+preserving legacy fields or migration paths for older local saves.
+
+The primary use environment is a laptop with a larger attached monitor. Do not spend
+much effort optimizing for small responsive layouts, and do not prioritize mobile
+unless explicitly asked.
+
 ## Dev flow
 
 Use this default loop:
