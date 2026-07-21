@@ -1194,60 +1194,6 @@ input[type="range"]::-moz-range-thumb {
   flex: 1;
 }
 
-.clock-track-swing {
-  display: grid;
-  gap: 6px;
-  padding: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.clock-track-swing-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.clock-track-swing-head h3 {
-  margin: 0;
-  color: var(--muted);
-  font-family: var(--font-display);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.track-swing-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.track-swing-field {
-  display: grid;
-  grid-template-columns: auto minmax(42px, 1fr) auto;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  padding: 5px;
-  border: 1px solid var(--track-color-strong);
-  background: var(--track-color-soft);
-}
-
-.track-swing-name {
-  color: var(--text);
-  font-size: 0.68rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.track-swing-value {
-  min-width: 34px;
-  padding: 3px 4px;
-  font-size: 0.66rem;
-}
-
 .micro-control-grid {
   gap: 10px;
 }
@@ -2210,16 +2156,17 @@ input[type="range"]::-moz-range-thumb {
 
 .sequencer-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   gap: 12px;
   padding-top: 10px;
   padding-bottom: 4px;
+  padding-left: 74px;
   overflow-x: auto;
 }
 
-.sequencer-action-group {
-  flex: 0 0 620px;
+.sequencer-actions > .voice-operation-button-group {
+  flex: 0 0 auto;
 }
 
 .sequencer-transpose-group {
@@ -2227,12 +2174,22 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .sequencer-sync-group {
-  width: 86px;
+  width: 98px;
 }
 
-.sequencer-action-group button,
-.sequencer-transpose-group button,
-.sequencer-sync-group button {
+.sequencer-copy-group {
+  width: 224px;
+}
+
+.sequencer-rotate-group {
+  width: 252px;
+}
+
+.sequencer-deselect-group {
+  width: 128px;
+}
+
+.sequencer-actions .voice-operation-button-group button {
   min-height: 30px;
   padding: 6px 12px;
 }
