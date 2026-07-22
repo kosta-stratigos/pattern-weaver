@@ -1519,6 +1519,10 @@ class PlaybackLayer {
 
     outputGain.connect(panNode);
     panNode.connect(this.output);
+    panNode.pan.value = 0;
+    panCenter.offset.value = 0;
+    panLfoDepth.gain.value = 0;
+    momentaryPanOffset.offset.value = 0;
     delayTone.type = "lowpass";
     momentaryFilter.type = "lowpass";
     momentaryFilter.frequency.value = 16000;
@@ -1635,7 +1639,7 @@ class PlaybackLayer {
     const swellFrequency = 1 / clampLfoRateSeconds(swell.rate, 1.8);
 
     outputGain.gain.value = swellCenterValue;
-    panNode.pan.value = driftCenter;
+    panNode.pan.value = 0;
     panCenter.offset.setValueAtTime(driftCenter, this.audioContext.currentTime);
     panLfo.frequency.setValueAtTime(driftFrequency, this.audioContext.currentTime);
     panLfoDepth.gain.setValueAtTime(driftAmplitude, this.audioContext.currentTime);
