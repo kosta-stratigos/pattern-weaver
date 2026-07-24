@@ -2154,44 +2154,38 @@ input[type="range"]::-moz-range-thumb {
   padding-bottom: 2px;
 }
 
-.sequencer-actions {
-  display: flex;
-  justify-content: flex-start;
+.sequencer-footer {
+  --sequencer-control-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto minmax(140px, 1fr);
   align-items: center;
   gap: 12px;
   padding-top: 10px;
   padding-bottom: 4px;
-  padding-left: 74px;
   overflow-x: auto;
 }
 
-.sequencer-actions > .voice-operation-button-group {
-  flex: 0 0 auto;
+.sequencer-actions {
+  grid-column: 2;
+  justify-self: center;
+  width: max-content;
 }
 
-.sequencer-transpose-group {
-  width: 112px;
+.sequencer-mode-toggle {
+  grid-column: 3;
+  justify-self: end;
+  width: 132px;
 }
 
-.sequencer-sync-group {
-  width: 98px;
+.sequencer-footer .voice-operation-button-group {
+  align-items: stretch;
+  height: var(--sequencer-control-height);
 }
 
-.sequencer-copy-group {
-  width: 224px;
-}
-
-.sequencer-rotate-group {
-  width: 252px;
-}
-
-.sequencer-deselect-group {
-  width: 128px;
-}
-
-.sequencer-actions .voice-operation-button-group button {
-  min-height: 30px;
-  padding: 6px 12px;
+.sequencer-footer .voice-operation-button-group button {
+  height: 100%;
+  min-height: 0;
+  padding: 0 12px;
 }
 
 .transpose-controls-group {
@@ -2426,8 +2420,15 @@ input[type="range"]::-moz-range-thumb {
     gap: 6px;
   }
 
-  .sequencer-actions {
-    justify-content: flex-start;
+  .sequencer-footer {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .sequencer-actions,
+  .sequencer-mode-toggle {
+    grid-column: auto;
+    justify-self: start;
   }
 
   .pattern-row-label {

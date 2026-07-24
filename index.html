@@ -77,23 +77,18 @@
             </div>
           </div>
           <div id="pattern-grid" class="pattern-grid"></div>
-          <div class="sequencer-actions" aria-label="Sequencer controls">
-            <div class="voice-operation-button-group sequencer-sync-group" role="group" aria-label="Sequencer sync">
+          <div class="sequencer-footer">
+            <div class="voice-operation-button-group sequencer-actions" role="group" aria-label="Sequencer controls">
               <button id="sequencer-sync" type="button">Re-Sync</button>
-            </div>
-            <div class="voice-operation-button-group sequencer-transpose-group" role="group" aria-label="Sequencer transpose">
               <button id="sequencer-transpose" type="button">Transpose</button>
-            </div>
-            <div class="voice-operation-button-group sequencer-copy-group" role="group" aria-label="Sequencer copy and paste">
               <button id="sequencer-copy-track" type="button">Copy Track</button>
               <button id="sequencer-paste-track" type="button" disabled>Paste Track</button>
-            </div>
-            <div class="voice-operation-button-group sequencer-rotate-group" role="group" aria-label="Sequencer rotation">
               <button id="sequencer-shift-left" type="button">Rotate Left</button>
               <button id="sequencer-shift-right" type="button">Rotate Right</button>
             </div>
-            <div class="voice-operation-button-group sequencer-deselect-group" role="group" aria-label="Sequencer selection">
-              <button id="sequencer-deselect-all" type="button" disabled>Deselect All</button>
+            <div class="voice-operation-button-group sequencer-mode-toggle" role="group" aria-label="Sequencer edit mode">
+              <button id="sequencer-mode-step" type="button" class="active" aria-pressed="true">Step</button>
+              <button id="sequencer-mode-pitch" type="button" aria-pressed="false">Pitch</button>
             </div>
           </div>
         </section>
@@ -754,6 +749,7 @@
                               <option value="falling">Falling</option>
                               <option value="random-once">Random Once</option>
                               <option value="random-every">Random Every</option>
+                              <option value="custom">Custom</option>
                             </select>
                           </label>
                           <label class="compact-field">

@@ -261,6 +261,8 @@ const ui = {
   sequencerShiftLeft: document.querySelector("#sequencer-shift-left"),
   sequencerShiftRight: document.querySelector("#sequencer-shift-right"),
   sequencerDeselectAll: document.querySelector("#sequencer-deselect-all"),
+  sequencerModeStep: document.querySelector("#sequencer-mode-step"),
+  sequencerModePitch: document.querySelector("#sequencer-mode-pitch"),
   sequencePatternSwitcher: document.querySelector("#sequence-pattern-switcher"),
   patternSwitchInstant: document.querySelector("#pattern-switch-instant"),
   patternSwitchOnOne: document.querySelector("#pattern-switch-on-one"),
@@ -327,8 +329,9 @@ const FILTER_TYPES = ["lowpass", "bandpass", "highpass"];
 const TRACK_PLAYBACK_MODES = ["forward", "ping-pong", "random", "reverse"];
 const PATTERN_VARIATION_LOCK_MODES = ["bar-one", "first-active", "none"];
 const PATTERN_SWITCH_MODES = ["instant", "on-one"];
+const SEQUENCER_EDIT_MODES = ["step", "pitch"];
 const TRACK_STEP_FILL_TYPES = ["none", "even", "random", "custom"];
-const TRACK_PITCH_FILL_TYPES = ["single", "rising", "falling", "random-once", "random-every"];
+const TRACK_PITCH_FILL_TYPES = ["single", "rising", "falling", "random-once", "random-every", "custom"];
 const ENVELOPE_WINDOW_TYPES = ["hann", "gaussian", "tukey"];
 const TRACK_ENVELOPE_TYPES = ["adsr", ...ENVELOPE_WINDOW_TYPES];
 const TRACK_ENVELOPE_MODES = ["step", "hold", "loop"];
@@ -2959,6 +2962,7 @@ const state = {
     trackIndex: 0,
     effectKey: "crackle",
   },
+  sequencerEditMode: "step",
   selectedStepKeys: new Set(),
   pitchRangeAnchorMidi: null,
   copiedTrackPattern: null,
@@ -2998,12 +3002,27 @@ function isSelectableStep(trackIndex, cellIndex) {
   return cellIndex < getTrackVisibleCellCount(track, pattern);
 }
 
+function isPitchAssignableStep(trackIndex, cellIndex) {
+  const track = state.tracks[trackIndex];
+  if (!track || !isSelectableStep(trackIndex, cellIndex)) return false;
+  const pattern = getTrackPlaybackPattern(track) ?? getTrackPattern(track);
+  return Boolean(pattern?.pattern?.[cellIndex]);
+}
+
+function normalizeSequencerEditMode(mode) {
+  return SEQUENCER_EDIT_MODES.includes(mode) ? mode : "step";
+}
+
+function isSequencerPitchMode() {
+  return normalizeSequencerEditMode(state.sequencerEditMode) === "pitch";
+}
+
 function isStepSelected(trackIndex, cellIndex) {
-  return state.selectedStepKeys.has(getStepSelectionKey(trackIndex, cellIndex));
+  return isSequencerPitchMode() && state.selectedStepKeys.has(getStepSelectionKey(trackIndex, cellIndex));
 }
 
 function setStepSelected(trackIndex, cellIndex, selected = true) {
-  if (!isSelectableStep(trackIndex, cellIndex)) return;
+  if (!isPitchAssignableStep(trackIndex, cellIndex)) return;
   const key = getStepSelectionKey(trackIndex, cellIndex);
   if (selected) {
     state.selectedStepKeys.add(key);
@@ -3026,7 +3045,7 @@ function clearTrackStepSelection(trackIndex) {
 function pruneSelectedSteps() {
   Array.from(state.selectedStepKeys).forEach((key) => {
     const selectedStep = parseStepSelectionKey(key);
-    if (!selectedStep || !isSelectableStep(selectedStep.trackIndex, selectedStep.cellIndex)) {
+    if (!selectedStep || !isPitchAssignableStep(selectedStep.trackIndex, selectedStep.cellIndex)) {
       state.selectedStepKeys.delete(key);
     }
   });
@@ -3048,14 +3067,14 @@ function selectStepOrderRange(startOrder, endOrder) {
 }
 
 function selectStepRangeBackward(trackIndex, cellIndex) {
-  if (!isSelectableStep(trackIndex, cellIndex)) return;
+  if (!isPitchAssignableStep(trackIndex, cellIndex)) return;
   pruneSelectedSteps();
   const targetOrder = getStepOrderIndex(trackIndex, cellIndex);
   let anchorOrder = null;
 
   state.selectedStepKeys.forEach((key) => {
     const selectedStep = parseStepSelectionKey(key);
-    if (!selectedStep || !isSelectableStep(selectedStep.trackIndex, selectedStep.cellIndex)) return;
+    if (!selectedStep || !isPitchAssignableStep(selectedStep.trackIndex, selectedStep.cellIndex)) return;
     const selectedOrder = getStepOrderIndex(selectedStep.trackIndex, selectedStep.cellIndex);
     if (selectedOrder < targetOrder && (anchorOrder == null || selectedOrder > anchorOrder)) {
       anchorOrder = selectedOrder;
@@ -3085,6 +3104,7 @@ function createTrackPatternClipboard(track, pattern = getTrackPattern(track)) {
 }
 
 function syncSequencerActions() {
+  syncSequencerEditMode();
   const track = getSelectedTrack();
   const activePattern = getTrackPattern(track);
   const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
@@ -3102,6 +3122,37 @@ function syncSequencerActions() {
   if (ui.sequencerDeselectAll instanceof HTMLButtonElement) {
     ui.sequencerDeselectAll.disabled = state.selectedStepKeys.size === 0;
   }
+}
+
+function syncSequencerEditMode() {
+  state.sequencerEditMode = normalizeSequencerEditMode(state.sequencerEditMode);
+  const isPitchMode = isSequencerPitchMode();
+  if (ui.sequencerModeStep instanceof HTMLButtonElement) {
+    ui.sequencerModeStep.classList.toggle("active", !isPitchMode);
+    ui.sequencerModeStep.setAttribute("aria-pressed", String(!isPitchMode));
+  }
+  if (ui.sequencerModePitch instanceof HTMLButtonElement) {
+    ui.sequencerModePitch.classList.toggle("active", isPitchMode);
+    ui.sequencerModePitch.setAttribute("aria-pressed", String(isPitchMode));
+  }
+}
+
+function setSequencerEditMode(mode) {
+  const nextMode = normalizeSequencerEditMode(mode);
+  const shouldClearPitchSelection = nextMode !== "pitch" && (state.selectedStepKeys.size > 0 || state.pitchRangeAnchorMidi != null);
+  if (state.sequencerEditMode === nextMode && !shouldClearPitchSelection) {
+    syncSequencerEditMode();
+    return;
+  }
+  state.sequencerEditMode = nextMode;
+  if (shouldClearPitchSelection) {
+    state.selectedStepKeys.clear();
+    state.pitchRangeAnchorMidi = null;
+  }
+  syncSequencerEditMode();
+  syncSequencerActions();
+  renderPattern(state.currentTransportStep);
+  renderPitchLanes();
 }
 
 function refreshAfterSequencerTrackOperation(trackIndex = state.selectedTrackIndex, { persist = true, resetPlayback = true } = {}) {
@@ -3230,16 +3281,18 @@ function formatTransposeAmount(mode = state.transposeOverlay.mode, amount = stat
 
 function getTransposeTargets() {
   pruneSelectedSteps();
-  const selectedTargets = Array.from(state.selectedStepKeys)
-    .map(parseStepSelectionKey)
-    .filter(Boolean)
-    .filter(({ trackIndex, cellIndex }) => {
-      const track = state.tracks[trackIndex];
-      const pattern = track ? getTrackPattern(track) : null;
-      return Boolean(pattern?.pattern?.[cellIndex]) && cellIndex < getTrackVisibleCellCount(track, pattern);
-    });
+  const selectedTargets = isSequencerPitchMode()
+    ? Array.from(state.selectedStepKeys)
+      .map(parseStepSelectionKey)
+      .filter(Boolean)
+      .filter(({ trackIndex, cellIndex }) => {
+        const track = state.tracks[trackIndex];
+        const pattern = track ? getTrackPattern(track) : null;
+        return Boolean(pattern?.pattern?.[cellIndex]) && cellIndex < getTrackVisibleCellCount(track, pattern);
+      })
+    : [];
 
-  if (state.selectedStepKeys.size > 0) return selectedTargets;
+  if (isSequencerPitchMode() && state.selectedStepKeys.size > 0) return selectedTargets;
 
   const track = getSelectedTrack();
   const activePattern = getTrackPattern(track);
@@ -3254,7 +3307,7 @@ function getTransposeTargets() {
 }
 
 function getTransposeTargetLabel(targets = getTransposeTargets()) {
-  if (state.selectedStepKeys.size > 0) {
+  if (isSequencerPitchMode() && state.selectedStepKeys.size > 0) {
     return targets.length === 1 ? "1 selected note" : `${targets.length} selected notes`;
   }
   return `${formatTrackName(getSelectedTrack(), state.selectedTrackIndex)} active notes`;
@@ -3333,7 +3386,7 @@ function transposeSequencerNotes(mode = state.transposeOverlay.mode, amount = st
 
 function getSelectedPitchAssignmentTargets() {
   pruneSelectedSteps();
-  if (!state.selectedStepKeys.size) return [];
+  if (!isSequencerPitchMode() || !state.selectedStepKeys.size) return [];
   return Array.from(state.selectedStepKeys)
     .map(parseStepSelectionKey)
     .filter(Boolean)
@@ -3443,6 +3496,7 @@ function assignPitchRangeToSelectedSteps(fromMidi, toMidi, { warnIfNoSelection =
   changedTrackIndexes.forEach((trackIndex) => {
     const track = state.tracks[trackIndex];
     if (!track) return;
+    syncPitchFillSettingsFromStepPitches(track, getTrackPattern(track), { preferCustom: true });
     state.chopPlayheadPositions[track.voiceIndex] = null;
     state.playback?.updateTrackBus(trackIndex, track);
   });
@@ -3458,6 +3512,11 @@ function assignPitchToSelectedSteps(midiNote) {
 
 function handlePitchKeyClick(trackIndex, midiNote, event) {
   state.selectedTrackIndex = trackIndex;
+  if (!isSequencerPitchMode()) {
+    state.pitchRangeAnchorMidi = null;
+    setDiagnostics("switch to Pitch mode to assign step pitch.", "warn");
+    return false;
+  }
   const pitch = clampMidiNote(midiNote, PITCH_LANE_REFERENCE_MIDI);
   if (event.shiftKey) {
     if (state.pitchRangeAnchorMidi == null) {
@@ -5363,6 +5422,73 @@ function getTrackPitchFillNotes(track, pattern = getTrackPattern(track)) {
   return fillNotes.length ? fillNotes : [quantizeMidiToTrackScale(track, fill.from)];
 }
 
+function getActiveStepPitchEntriesForPattern(track, pattern = getTrackPattern(track)) {
+  const activePattern = pattern ?? getTrackPattern(track);
+  const visibleCellCount = getTrackVisibleCellCount(track, activePattern);
+  const entries = [];
+  for (let cellIndex = 0; cellIndex < visibleCellCount; cellIndex += 1) {
+    if (!activePattern.pattern?.[cellIndex]) continue;
+    entries.push({
+      cellIndex,
+      pitch: getTrackStepPitchMidi(track, cellIndex, activePattern),
+    });
+  }
+  return entries;
+}
+
+function getPitchRangeForStepEntries(entries) {
+  if (!entries.length) return null;
+  const pitches = entries.map((entry) => entry.pitch);
+  return {
+    from: Math.min(...pitches),
+    to: Math.max(...pitches),
+  };
+}
+
+function stepPitchesMatchPitchFillType(track, entries, fillType, fromMidi, toMidi) {
+  if (!entries.length) return false;
+  const fill = normalizePitchFillSettings({ type: fillType, from: fromMidi, to: toMidi });
+  const availableNotes = getTrackPitchFillNotes(track, { pitchFill: fill });
+  if (!availableNotes.length) return false;
+
+  return entries.every(({ pitch }, activeIndex) => {
+    if (fill.type === "single") return pitch === availableNotes[0];
+    if (fill.type === "rising") return pitch === availableNotes[activeIndex % availableNotes.length];
+    if (fill.type === "falling") return pitch === availableNotes[(availableNotes.length - 1) - (activeIndex % availableNotes.length)];
+    return false;
+  });
+}
+
+function inferPitchFillSettingsFromStepPitches(track, pattern = getTrackPattern(track), { preferCustom = false } = {}) {
+  const activePattern = pattern ?? getTrackPattern(track);
+  const currentPitchFill = normalizePitchFillSettings(activePattern.pitchFill);
+  const entries = getActiveStepPitchEntriesForPattern(track, activePattern);
+  const range = getPitchRangeForStepEntries(entries);
+  if (!range) return currentPitchFill;
+
+  if (stepPitchesMatchPitchFillType(track, entries, "single", range.from, range.to)) {
+    return { type: "single", from: range.from, to: range.from };
+  }
+  if (stepPitchesMatchPitchFillType(track, entries, "rising", range.from, range.to)) {
+    return { type: "rising", from: range.from, to: range.to };
+  }
+  if (stepPitchesMatchPitchFillType(track, entries, "falling", range.from, range.to)) {
+    return { type: "falling", from: range.from, to: range.to };
+  }
+
+  if (!preferCustom && ["random-once", "random-every"].includes(currentPitchFill.type)) {
+    return { ...currentPitchFill, from: range.from, to: range.to };
+  }
+
+  return { type: "custom", from: range.from, to: range.to };
+}
+
+function syncPitchFillSettingsFromStepPitches(track, pattern = getTrackPattern(track), options = {}) {
+  const activePattern = pattern ?? getTrackPattern(track);
+  activePattern.pitchFill = inferPitchFillSettingsFromStepPitches(track, activePattern, options);
+  return activePattern.pitchFill;
+}
+
 function quantizeMidiToTrackScale(track, midiNote) {
   const clamped = clampMidiNote(midiNote, PITCH_LANE_REFERENCE_MIDI);
   if (isMidiNoteInTrackScale(track, clamped)) return clamped;
@@ -5380,6 +5506,7 @@ function quantizeMidiToTrackScale(track, midiNote) {
 function applyTrackPitchFill(track) {
   const activePattern = getTrackPattern(track);
   const fill = activePattern.pitchFill;
+  if (fill.type === "custom") return;
   const activeStepIndexes = activePattern.pattern
     .slice(0, getTrackVisibleCellCount(track))
     .map((enabled, index) => (enabled ? index : -1))
@@ -6772,11 +6899,16 @@ function syncTrackSettingsOverlay() {
   const stepFillAmountDisabled = ["none", "custom"].includes(stepFillSettings.type);
   ui.trackStepFillAmount.disabled = stepFillAmountDisabled;
   ui.trackStepFillAmountField?.classList.toggle("is-disabled", stepFillAmountDisabled);
-  ui.trackPitchFillType.value = activePattern.pitchFill.type;
-  ui.trackPitchFillFrom.value = String(activePattern.pitchFill.from);
-  ui.trackPitchFillTo.value = String(activePattern.pitchFill.to);
-  ui.trackPitchFillTo.disabled = activePattern.pitchFill.type === "single";
-  ui.trackPitchFillToField.classList.toggle("is-disabled", activePattern.pitchFill.type === "single");
+  const pitchFillSettings = normalizePitchFillSettings(activePattern.pitchFill);
+  ui.trackPitchFillType.value = pitchFillSettings.type;
+  ui.trackPitchFillFrom.value = String(pitchFillSettings.from);
+  ui.trackPitchFillTo.value = String(pitchFillSettings.to);
+  const pitchFillFromDisabled = pitchFillSettings.type === "custom";
+  const pitchFillToDisabled = ["single", "custom"].includes(pitchFillSettings.type);
+  ui.trackPitchFillFrom.disabled = pitchFillFromDisabled;
+  ui.trackPitchFillTo.disabled = pitchFillToDisabled;
+  ui.trackPitchFillFrom.closest(".compact-field")?.classList.toggle("is-disabled", pitchFillFromDisabled);
+  ui.trackPitchFillToField.classList.toggle("is-disabled", pitchFillToDisabled);
   drawTrackEnvelopeVisualizer(activePattern.envelope);
 }
 
@@ -8851,20 +8983,26 @@ function renderPattern(activeStep = state.currentTransportStep) {
         stepButton.setAttribute("aria-pressed", String(enabled));
         stepButton.addEventListener("click", (event) => {
           state.selectedTrackIndex = trackIndex;
-          if (event.metaKey) {
+          if (isSequencerPitchMode()) {
             event.preventDefault();
-            toggleStepSelection(trackIndex, cellIndex);
-            syncUi();
-            renderTrackSelector();
-            renderEffectsMatrix();
-            renderMixer();
-            renderPattern(activeStep);
-            drawWaveform();
-            return;
-          }
-          if (event.shiftKey) {
-            event.preventDefault();
-            selectStepRangeBackward(trackIndex, cellIndex);
+            if (!displayPattern.pattern[cellIndex]) {
+              setDiagnostics("activate step before selecting it for pitch.", "warn");
+              syncUi();
+              renderTrackSelector();
+              renderEffectsMatrix();
+              renderMixer();
+              renderPattern(activeStep);
+              drawWaveform();
+              return;
+            }
+            if (event.metaKey) {
+              toggleStepSelection(trackIndex, cellIndex);
+            } else if (event.shiftKey) {
+              selectStepRangeBackward(trackIndex, cellIndex);
+            } else {
+              state.selectedStepKeys.clear();
+              setStepSelected(trackIndex, cellIndex);
+            }
             syncUi();
             renderTrackSelector();
             renderEffectsMatrix();
@@ -8878,6 +9016,7 @@ function renderPattern(activeStep = state.currentTransportStep) {
             assignPitchFillToStep(track, cellIndex, displayPattern);
           } else {
             displayPattern.stepPitches[cellIndex] = null;
+            state.selectedStepKeys.delete(getStepSelectionKey(trackIndex, cellIndex));
           }
           syncStepFillSettingsFromGrid(track, displayPattern, { preferCustom: true });
           stepButton.classList.toggle("active", displayPattern.pattern[cellIndex]);
@@ -9150,8 +9289,10 @@ function updateSelectedTrackPattern(patch, options = {}) {
     }
   }
   if ("pitchFill" in patch) {
-    applyTrackPitchFill(track);
-    state.chopPlayheadPositions[track.voiceIndex] = null;
+    if (activePattern.pitchFill.type !== "custom") {
+      applyTrackPitchFill(track);
+      state.chopPlayheadPositions[track.voiceIndex] = null;
+    }
   }
   syncUi();
   renderTrackSelector();
@@ -9789,6 +9930,8 @@ ui.sequencerPasteTrack?.addEventListener("click", pasteCopiedTrackPattern);
 ui.sequencerShiftLeft?.addEventListener("click", () => rotateSelectedTrackPattern(-1));
 ui.sequencerShiftRight?.addEventListener("click", () => rotateSelectedTrackPattern(1));
 ui.sequencerDeselectAll?.addEventListener("click", deselectAllSteps);
+ui.sequencerModeStep?.addEventListener("click", () => setSequencerEditMode("step"));
+ui.sequencerModePitch?.addEventListener("click", () => setSequencerEditMode("pitch"));
 ui.transposeClose?.addEventListener("click", () => closeTransposeOverlay());
 ui.transposeCancel?.addEventListener("click", () => closeTransposeOverlay());
 ui.transposeApply?.addEventListener("click", () => transposeSequencerNotes());
@@ -9843,8 +9986,15 @@ ui.trackStepFillAmount.addEventListener("input", () => {
   }, { preserveStepFillPlaybackPosition: true });
 });
 ui.trackPitchFillType.addEventListener("change", () => {
+  const track = getSelectedTrack();
   const currentPattern = getSelectedTrackPattern();
   const nextType = ui.trackPitchFillType.value;
+  if (nextType === "custom") {
+    updateSelectedTrackPattern({
+      pitchFill: inferPitchFillSettingsFromStepPitches(track, currentPattern, { preferCustom: true }),
+    });
+    return;
+  }
   updateSelectedTrackPattern({
     pitchFill: normalizePitchFillSettings({
       type: nextType,
