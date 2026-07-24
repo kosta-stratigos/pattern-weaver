@@ -357,12 +357,23 @@ h2 {
 .pitch-key {
   appearance: none;
   position: relative;
+  overflow: hidden;
   min-height: 30px;
   padding: 0;
   border-radius: 2px;
   border: 1px solid rgba(212, 235, 225, 0.16);
   background: linear-gradient(180deg, rgba(245, 252, 248, 0.9), rgba(211, 228, 220, 0.72));
   transition: opacity 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.pitch-key::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .pitch-key.is-black {
@@ -407,6 +418,36 @@ h2 {
 
 .pitch-key.is-active.is-black {
   background: linear-gradient(180deg, var(--track-color), rgba(4, 11, 10, 0.9));
+}
+
+.pitch-key:active,
+.pitch-key.is-click-feedback {
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.pitch-key:active::before,
+.pitch-key.is-click-feedback::before {
+  animation: pitch-key-click-pulse 170ms ease-out both;
+}
+
+.pitch-key.is-black:active,
+.pitch-key.is-black.is-click-feedback {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+@keyframes pitch-key-click-pulse {
+  0% {
+    opacity: 0;
+  }
+
+  24% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
 }
 
 .pitch-key.is-range-anchor {

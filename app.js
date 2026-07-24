@@ -2978,6 +2978,8 @@ const sampleCache = new Map();
 const momentaryHeldEffectKeys = new Set();
 const momentarySpinGestureTrackIndexes = new Set();
 const momentarySpinSnapAnimations = new Map();
+let pitchKeyClickFeedback = null;
+let pitchKeyClickFeedbackTimer = null;
 
 function getStepSelectionKey(trackIndex, cellIndex) {
   return `${trackIndex}:${cellIndex}`;
@@ -3530,6 +3532,16 @@ function handlePitchKeyClick(trackIndex, midiNote, event) {
   }
   state.pitchRangeAnchorMidi = null;
   return assignPitchToSelectedSteps(pitch);
+}
+
+function pulsePitchKeyClickFeedback(trackIndex, midiNote) {
+  pitchKeyClickFeedback = { trackIndex, midiNote };
+  if (pitchKeyClickFeedbackTimer) window.clearTimeout(pitchKeyClickFeedbackTimer);
+  pitchKeyClickFeedbackTimer = window.setTimeout(() => {
+    pitchKeyClickFeedback = null;
+    pitchKeyClickFeedbackTimer = null;
+    renderPitchLanes();
+  }, 180);
 }
 
 function getSelectedTrack() {
@@ -6326,16 +6338,21 @@ function renderPitchLanes() {
       if (state.pitchRangeAnchorMidi === midiNote) {
         key.classList.add("is-range-anchor");
       }
+      if (pitchKeyClickFeedback?.trackIndex === index && pitchKeyClickFeedback.midiNote === midiNote) {
+        key.classList.add("is-click-feedback");
+      }
       key.dataset.trackIndex = String(index);
       key.dataset.midiNote = String(midiNote);
       key.title = `${NOTE_NAMES[getMidiPitchClass(midiNote)]}${Math.floor(midiNote / 12) - 1}`;
       key.addEventListener("click", (event) => {
+        pulsePitchKeyClickFeedback(index, midiNote);
         handlePitchKeyClick(index, midiNote, event);
         syncUi();
         renderTrackSelector();
         renderEffectsMatrix();
         renderMixer();
         renderPattern();
+        renderPitchLanes();
         drawWaveform();
         writeStoredSession();
       });
