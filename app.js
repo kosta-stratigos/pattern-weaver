@@ -364,6 +364,16 @@ const CHOP_PLAYBACK_LENGTH_MIN_MS = 50;
 const CHOP_PLAYBACK_LENGTH_MAX_MS = 1500;
 const CHOP_PLAYBACK_LENGTH_DEFAULT_MS = 150;
 const CHOP_PLAYBACK_LENGTH_UNIT = "ms";
+const DEFAULT_TRACK_SCALE_MODE = "major-pent";
+const DEFAULT_TRACK_STEPS_PER_BAR = 16;
+const DEFAULT_TRACK_STEP_FILL_TYPE = "even";
+const DEFAULT_TRACK_STEP_FILL_AMOUNT = 25;
+const DEFAULT_TRACK_PITCH_FILLS = [
+  { type: "rising", from: 72, to: 83 },
+  { type: "rising", from: 67, to: 78 },
+  { type: "rising", from: 53, to: 64 },
+  { type: "rising", from: 48, to: 59 },
+];
 const SCALE_OPTIONS = [
   { value: "chromatic", label: "Chromatic", intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
   { value: "ionian", label: "Ionian (I)", intervals: [0, 2, 4, 5, 7, 9, 11] },
@@ -716,17 +726,14 @@ function createDefaultMomentaryEffectsState() {
 
 function createDefaultStepFillSettings() {
   return {
-    type: "none",
-    amount: 0,
+    type: DEFAULT_TRACK_STEP_FILL_TYPE,
+    amount: DEFAULT_TRACK_STEP_FILL_AMOUNT,
   };
 }
 
-function createDefaultPitchFillSettings() {
-  return {
-    type: "single",
-    from: PITCH_LANE_REFERENCE_MIDI,
-    to: PITCH_LANE_REFERENCE_MIDI,
-  };
+function createDefaultPitchFillSettings(trackIndex = 0) {
+  const safeTrackIndex = Math.max(0, Math.min(TRACK_COUNT - 1, Number(trackIndex) || 0));
+  return { ...DEFAULT_TRACK_PITCH_FILLS[safeTrackIndex] };
 }
 
 function createDefaultPatternVariationSettings() {
@@ -740,10 +747,10 @@ function createDefaultTrackEnvelope() {
   return {
     mode: "step",
     type: "adsr",
-    attack: 10,
-    decay: 80,
-    sustain: 70,
-    release: 120,
+    attack: 14,
+    decay: 90,
+    sustain: 55,
+    release: 60,
     gaussianWidth: 50,
     tukeyTaper: 60,
     loopSpeed: TRACK_ENVELOPE_LOOP_SPEED_DEFAULT_HZ,
@@ -795,23 +802,50 @@ function createDefaultPatternSwitcherState(source = {}) {
   };
 }
 
-function createTrackPattern(id = 1, seedOffset = 0) {
+function createDefaultStepPattern() {
+  const visibleCellCount = DEFAULT_PATTERN_BAR_COUNT * DEFAULT_TRACK_STEPS_PER_BAR;
+  const activeSteps = getStepFillActiveStepsForAmount(visibleCellCount, DEFAULT_TRACK_STEP_FILL_AMOUNT);
+  return buildEvenStepFillPattern(visibleCellCount, activeSteps);
+}
+
+function createStepPitchesForPitchFill(track, pattern, pitchFill) {
+  const visibleCellCount = Math.max(1, Math.min(MAX_PATTERN_CELLS, DEFAULT_TRACK_STEPS_PER_BAR * DEFAULT_PATTERN_BAR_COUNT));
+  const stepPitches = Array.from({ length: MAX_PATTERN_CELLS }, () => null);
+  const availableNotes = getScaleNotesInRange(track, pitchFill.from, pitchFill.to);
+  const fillNotes = availableNotes.length ? availableNotes : [quantizeMidiToTrackScale(track, pitchFill.from)];
+  let activeIndex = 0;
+
+  for (let stepIndex = 0; stepIndex < visibleCellCount; stepIndex += 1) {
+    if (!pattern[stepIndex]) continue;
+    stepPitches[stepIndex] = fillNotes[activeIndex % fillNotes.length];
+    activeIndex += 1;
+  }
+
+  return stepPitches;
+}
+
+function createTrackPattern(id = 1, trackIndex = 0) {
+  const stepFill = createDefaultStepFillSettings();
+  const pitchFill = createDefaultPitchFillSettings(trackIndex);
+  const pattern = createDefaultStepPattern();
+  const defaultTrack = { scaleMode: DEFAULT_TRACK_SCALE_MODE };
+
   return {
     id,
     name: `Pattern ${id}`,
     isDefined: id === 1,
     barCount: DEFAULT_PATTERN_BAR_COUNT,
-    stepCount: 16,
+    stepCount: DEFAULT_TRACK_STEPS_PER_BAR,
     playbackMode: "forward",
     stepProbability: 100,
     effects: createTrackEffects(),
     envelope: createDefaultTrackEnvelope(),
-    stepFill: createDefaultStepFillSettings(),
-    pitchFill: createDefaultPitchFillSettings(),
+    stepFill,
+    pitchFill,
     stepVariation: createDefaultPatternVariationSettings(),
     pitchVariation: createDefaultPatternVariationSettings(),
-    stepPitches: Array.from({ length: MAX_PATTERN_CELLS }, () => null),
-    pattern: Array.from({ length: MAX_PATTERN_CELLS }, (_, index) => (index + seedOffset) % 4 === 0),
+    stepPitches: createStepPitchesForPitchFill(defaultTrack, pattern, pitchFill),
+    pattern,
   };
 }
 
@@ -2806,12 +2840,12 @@ function createTrack(id) {
     color: TRACK_COLORS[(id - 1) % TRACK_COLORS.length],
     voiceIndex: id - 1,
     activePatternIndex: 0,
-    scaleMode: "chromatic",
+    scaleMode: DEFAULT_TRACK_SCALE_MODE,
     muted: false,
     solo: false,
     volume: 0.85,
     pan: 0,
-    patterns: Array.from({ length: TRACK_PATTERN_COUNT }, (_, index) => createTrackPattern(index + 1, index + id - 1)),
+    patterns: Array.from({ length: TRACK_PATTERN_COUNT }, (_, index) => createTrackPattern(index + 1, id - 1)),
   };
 }
 
@@ -2819,7 +2853,7 @@ function createVoiceConfig(id) {
   return {
     id,
     name: `Voice ${id}`,
-    mode: id % 2 === 0 ? "chop" : "granular",
+    mode: "synth",
     sampleId: DEFAULT_SAMPLE_ID,
     sampleName: DEFAULT_SAMPLE_NAME,
     sampleSource: "library",
@@ -2860,7 +2894,7 @@ function createVoiceConfig(id) {
     synthNoiseMix: 0,
     synthFoldAmount: 0,
     synthFilterType: "lowpass",
-    synthFilterFrequency: 3200,
+    synthFilterFrequency: 16000,
     synthFilterQ: 0.8,
   };
 }
@@ -4304,7 +4338,7 @@ function getTrackBusPattern(track) {
 function getTrackPattern(track, patternIndex = track?.activePatternIndex ?? 0) {
   if (!track) return createTrackPattern(1);
   const safeIndex = Math.max(0, Math.min(TRACK_PATTERN_COUNT - 1, Number(patternIndex) || 0));
-  return track.patterns?.[safeIndex] ?? createTrackPattern(safeIndex + 1);
+  return track.patterns?.[safeIndex] ?? createTrackPattern(safeIndex + 1, Math.max(0, (track.id ?? 1) - 1));
 }
 
 function getSelectedTrackPattern() {
@@ -7082,7 +7116,7 @@ function submitVoiceNameOverlay() {
 
 function createDefaultPatternForTrack(trackIndex, patternIndex) {
   const track = state.tracks[trackIndex];
-  return createTrackPattern(patternIndex + 1, patternIndex + track.id - 1);
+  return createTrackPattern(patternIndex + 1, trackIndex);
 }
 
 function cloneTrackPatternIntoSlot(trackIndex, sourcePatternIndex, targetPatternIndex) {
