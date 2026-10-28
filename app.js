@@ -176,10 +176,12 @@ const ui = {
   delayOverlayClose: document.querySelector("#delay-overlay-close"),
   delayTime: document.querySelector("#delay-time"),
   delayTimeValue: document.querySelector("#delay-time-value"),
-  delayFeedback: document.querySelector("#delay-feedback"),
-  delayFeedbackValue: document.querySelector("#delay-feedback-value"),
+  delayRepeats: document.querySelector("#delay-repeats"),
+  delayRepeatsValue: document.querySelector("#delay-repeats-value"),
   delayDecay: document.querySelector("#delay-decay"),
   delayDecayValue: document.querySelector("#delay-decay-value"),
+  delayEchoLevel: document.querySelector("#delay-echo-level"),
+  delayEchoLevelValue: document.querySelector("#delay-echo-level-value"),
   delayTone: document.querySelector("#delay-tone"),
   delayToneValue: document.querySelector("#delay-tone-value"),
   delayMix: document.querySelector("#delay-mix"),
@@ -423,7 +425,45 @@ function clampDelayTime(value) {
 }
 
 function clampDelayPercent(value, max = 100, fallback = 0) {
-  return Math.max(0, Math.min(max, Number(value) || fallback));
+  const numeric = Number(value);
+  return Math.max(0, Math.min(max, Number.isFinite(numeric) ? numeric : fallback));
+}
+
+function clampDelayDecay(value) {
+  const numeric = Number(value);
+  return Math.max(100, Math.min(1000, Number.isFinite(numeric) && numeric !== 0 ? numeric : 500));
+}
+
+function clampDelayRepeats(value) {
+  const numeric = Number(value);
+  return Math.max(1, Math.min(5, Number.isFinite(numeric) && numeric !== 0 ? numeric : 3));
+}
+
+function formatDelayDecay(value) {
+  return `${clampDelayDecay(value)} ms`;
+}
+
+function formatDelayTone(value) {
+  const tone = Math.round(clampDelayPercent(value, 100, 60));
+  return `${tone}% · ${tone <= 50 ? "Low-pass" : "High-pass"}`;
+}
+
+function clampDelayEchoLevel(value) {
+  return Math.max(1, Math.min(10, Number(value) || 7));
+}
+
+function delayEchoGain(value) {
+  const level = clampDelayEchoLevel(value);
+  return level <= 7
+    ? 0.5 + ((level - 1) / 6) * 0.5
+    : 1 + ((level - 7) / 3) * 0.2;
+}
+
+function getDelayToneFrequencies(value) {
+  const tone = clampDelayPercent(value, 100, 60);
+  const lowpass = tone <= 50 ? 500 * (2 ** ((tone / 50) * 4.8)) : 16000;
+  const highpass = tone <= 50 ? 20 : 20 * (2 ** (((tone - 50) / 50) * 8.64));
+  return { lowpass: Math.min(16000, lowpass), highpass: Math.min(12000, highpass) };
 }
 
 function clampFilterFrequency(value) {
@@ -664,8 +704,9 @@ function createDefaultDelaySettings() {
   return {
     enabled: false,
     time: 280,
-    feedback: 35,
-    decay: 55,
+    repeats: 3,
+    decay: 500,
+    echoLevel: 7,
     tone: 60,
     mix: 30,
   };
@@ -1018,8 +1059,9 @@ function normalizeDelaySettings(source = {}, fallback = createDefaultDelaySettin
   return {
     enabled: Boolean(source.enabled),
     time: clampDelayTime(source.time ?? fallback.time),
-    feedback: clampDelayPercent(source.feedback ?? fallback.feedback, 95, fallback.feedback),
-    decay: clampDelayPercent(source.decay ?? fallback.decay, 100, fallback.decay),
+    repeats: clampDelayRepeats(source.repeats ?? fallback.repeats),
+    decay: clampDelayDecay(source.decay ?? fallback.decay),
+    echoLevel: clampDelayEchoLevel(source.echoLevel ?? fallback.echoLevel),
     tone: clampDelayPercent(source.tone ?? fallback.tone, 100, fallback.tone),
     mix: clampDelayPercent(source.mix ?? fallback.mix, 100, fallback.mix),
   };
@@ -1528,11 +1570,6 @@ class PlaybackLayer {
     const input = this.audioContext.createGain();
     const filterNode = this.audioContext.createBiquadFilter();
     const dryGain = this.audioContext.createGain();
-    const delaySend = this.audioContext.createGain();
-    const delayNode = this.audioContext.createDelay(2.4);
-    const delayTone = this.audioContext.createBiquadFilter();
-    const delayWetGain = this.audioContext.createGain();
-    const feedbackGain = this.audioContext.createGain();
     const outputGain = this.audioContext.createGain();
     const panNode = this.audioContext.createStereoPanner();
     const panCenter = this.audioContext.createConstantSource();
@@ -1560,7 +1597,6 @@ class PlaybackLayer {
     panCenter.offset.value = 0;
     panLfoDepth.gain.value = 0;
     momentaryPanOffset.offset.value = 0;
-    delayTone.type = "lowpass";
     momentaryFilter.type = "lowpass";
     momentaryFilter.frequency.value = 16000;
     momentaryFilter.Q.value = 0.7;
@@ -1609,11 +1645,6 @@ class PlaybackLayer {
       input,
       filterNode,
       dryGain,
-      delaySend,
-      delayNode,
-      delayTone,
-      delayWetGain,
-      feedbackGain,
       outputGain,
       panNode,
       panCenter,
@@ -1645,6 +1676,7 @@ class PlaybackLayer {
         glitchNextTime: 0,
       },
       activeVoices: new Set(),
+      activeRepeats: new Set(),
     };
     return bus;
   }
@@ -1652,16 +1684,11 @@ class PlaybackLayer {
   updateTrackBus(trackIndex, track = this.state.tracks[trackIndex], effectPattern = getTrackBusPattern(track)) {
     const bus = this.trackBuses?.[trackIndex];
     if (!bus || !track) return;
-    const { input, filterNode, dryGain, delaySend, delayNode, delayTone, delayWetGain, feedbackGain, momentaryInput, outputGain, panNode, panCenter, panLfo, panLfoDepth, gainCenter, gainLfo, gainLfoDepth } = bus;
+    const { input, filterNode, dryGain, momentaryInput, outputGain, panNode, panCenter, panLfo, panLfoDepth, gainCenter, gainLfo, gainLfoDepth } = bus;
 
     input.disconnect();
     filterNode.disconnect();
     dryGain.disconnect();
-    delaySend.disconnect();
-    delayNode.disconnect();
-    delayTone.disconnect();
-    delayWetGain.disconnect();
-    feedbackGain.disconnect();
 
     const effects = effectPattern?.effects ?? getTrackEffectContainer(track);
     const filter = effects.filter;
@@ -1693,38 +1720,75 @@ class PlaybackLayer {
       sourceStage = filterNode;
     }
 
-    if (!delay.enabled) {
-      sourceStage.connect(momentaryInput);
-      this.updateMomentaryTrackBus(trackIndex);
-      return;
-    }
-
     const mixAmount = clampDelayPercent(delay.mix, 100, 30) / 100;
-    const feedbackAmount = clampDelayPercent(delay.feedback, 95, 35) / 100;
-    const decayAmount = clampDelayPercent(delay.decay, 100, 55) / 100;
-    const toneAmount = clampDelayPercent(delay.tone, 100, 60) / 100;
-    const delayTimeSeconds = clampDelayTime(delay.time) / 1000;
-    const feedbackLoopGain = Math.min(0.94, feedbackAmount * (0.28 + decayAmount * 0.66));
-    const wetLevel = Math.min(1, mixAmount * (0.45 + decayAmount * 0.55));
-    const toneFrequency = 500 * (2 ** (toneAmount * 4.8));
-
-    dryGain.gain.setValueAtTime(1 - mixAmount, this.audioContext.currentTime);
-    delaySend.gain.setValueAtTime(mixAmount, this.audioContext.currentTime);
-    delayNode.delayTime.setValueAtTime(delayTimeSeconds, this.audioContext.currentTime);
-    delayTone.frequency.setValueAtTime(Math.max(500, Math.min(16000, toneFrequency)), this.audioContext.currentTime);
-    delayWetGain.gain.setValueAtTime(wetLevel, this.audioContext.currentTime);
-    feedbackGain.gain.setValueAtTime(feedbackLoopGain, this.audioContext.currentTime);
-
+    const dryLevel = delay.enabled ? 1 - mixAmount : 1;
+    dryGain.gain.setValueAtTime(dryLevel, this.audioContext.currentTime);
     sourceStage.connect(dryGain);
     dryGain.connect(momentaryInput);
-    sourceStage.connect(delaySend);
-    delaySend.connect(delayNode);
-    delayNode.connect(delayTone);
-    delayTone.connect(delayWetGain);
-    delayWetGain.connect(momentaryInput);
-    delayTone.connect(feedbackGain);
-    feedbackGain.connect(delayNode);
+    if (delay.enabled) {
+      const tone = getDelayToneFrequencies(delay.tone);
+      bus.activeRepeats.forEach((repeat) => repeat.setTone(tone));
+    }
     this.updateMomentaryTrackBus(trackIndex);
+  }
+
+  scheduleTrackRepeats(trackIndex, sourceNode, when) {
+    const bus = this.trackBuses?.[trackIndex];
+    const delay = getTrackDelay(trackIndex);
+    if (!bus || !delay.enabled) return;
+
+    const delaySeconds = clampDelayTime(delay.time) / 1000;
+    const decaySeconds = clampDelayDecay(delay.decay) / 1000;
+    const wetGain = (clampDelayPercent(delay.mix, 100, 30) / 100) * delayEchoGain(delay.echoLevel);
+    const tone = getDelayToneFrequencies(delay.tone);
+    const patternFilter = getTrackEffectContainer(trackIndex).filter;
+    const now = this.audioContext.currentTime;
+
+    for (let index = 1; index <= clampDelayRepeats(delay.repeats); index += 1) {
+      const repeatStart = when + delaySeconds * index;
+      const delayNode = this.audioContext.createDelay(6.1);
+      const effectFilter = patternFilter.enabled ? this.audioContext.createBiquadFilter() : null;
+      const lowpass = this.audioContext.createBiquadFilter();
+      const highpass = this.audioContext.createBiquadFilter();
+      const repeatGain = this.audioContext.createGain();
+      const toneNodes = effectFilter ? [effectFilter, lowpass, highpass] : [lowpass, highpass];
+      if (effectFilter) {
+        effectFilter.type = patternFilter.type;
+        effectFilter.frequency.setValueAtTime(clampFilterFrequency(patternFilter.frequency), when);
+        effectFilter.Q.setValueAtTime(clampFilterQ(patternFilter.q), when);
+      }
+      lowpass.type = "lowpass";
+      highpass.type = "highpass";
+      lowpass.frequency.setValueAtTime(tone.lowpass, when);
+      highpass.frequency.setValueAtTime(tone.highpass, when);
+      delayNode.delayTime.setValueAtTime(delaySeconds * index, when);
+      repeatGain.gain.setValueAtTime(0, when);
+      repeatGain.gain.setValueAtTime(wetGain, repeatStart);
+      repeatGain.gain.linearRampToValueAtTime(0.0001, repeatStart + decaySeconds);
+      sourceNode.connect(delayNode);
+      delayNode.connect(effectFilter ?? lowpass);
+      effectFilter?.connect(lowpass);
+      lowpass.connect(highpass);
+      highpass.connect(repeatGain);
+      repeatGain.connect(bus.momentaryInput);
+
+      const repeat = {
+        setTone: (frequencies) => {
+          lowpass.frequency.setTargetAtTime(frequencies.lowpass, this.audioContext.currentTime, 0.015);
+          highpass.frequency.setTargetAtTime(frequencies.highpass, this.audioContext.currentTime, 0.015);
+        },
+        disconnect: () => {
+          sourceNode.disconnect(delayNode);
+          delayNode.disconnect();
+          toneNodes.forEach((node) => node.disconnect());
+          repeatGain.disconnect();
+          bus.activeRepeats.delete(repeat);
+        },
+      };
+      bus.activeRepeats.add(repeat);
+      const cleanupAt = repeatStart + decaySeconds;
+      window.setTimeout(repeat.disconnect, Math.max(0, Math.ceil((cleanupAt - now + 0.05) * 1000)));
+    }
   }
 
   getMomentarySpeedRampSeconds(trackIndex, active) {
@@ -2035,6 +2099,7 @@ class PlaybackLayer {
     } else {
       voiceGain.connect(busInput);
     }
+    if (!outputNode) this.scheduleTrackRepeats(trackIndex, voicePan ?? voiceGain, when);
 
     const intendedOffset = effectiveReverse ? buffer.duration - offset - safeDuration : offset;
     const playbackOffset = Math.max(0, Math.min(maxOffset, intendedOffset));
@@ -2259,6 +2324,7 @@ class PlaybackLayer {
     const busInput = this.trackBuses?.[settings.trackIndex]?.input ?? this.output;
     eventInput.connect(eventGain);
     eventGain.connect(busInput);
+    this.scheduleTrackRepeats(settings.trackIndex, eventGain, when);
     const grainHandles = [];
 
     let triggered = false;
@@ -2475,6 +2541,7 @@ class PlaybackLayer {
     }
     filterNode.connect(ampGain);
     ampGain.connect(busInput);
+    this.scheduleTrackRepeats(settings.trackIndex, ampGain, when);
 
     oscillator.start(when);
     noiseSource.start(when);
@@ -3777,22 +3844,32 @@ function renderPatternEffectSettingsControls(effectKey) {
         onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { time: Number(input.value) }),
       }),
       createEffectSettingsSlider({
-        id: "pattern-effect-delay-feedback",
-        label: "Feedback",
-        min: 0,
-        max: 95,
-        value: delay.feedback,
-        valueText: formatPercent(delay.feedback, 95),
-        onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { feedback: Number(input.value) }),
+        id: "pattern-effect-delay-repeats",
+        label: "Repeats",
+        min: 1,
+        max: 5,
+        value: delay.repeats,
+        valueText: String(delay.repeats),
+        onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { repeats: Number(input.value) }),
       }),
       createEffectSettingsSlider({
         id: "pattern-effect-delay-decay",
         label: "Decay",
-        min: 0,
-        max: 100,
+        min: 100,
+        max: 1000,
+        step: 10,
         value: delay.decay,
-        valueText: formatPercent(delay.decay),
+        valueText: formatDelayDecay(delay.decay),
         onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { decay: Number(input.value) }),
+      }),
+      createEffectSettingsSlider({
+        id: "pattern-effect-delay-echo-level",
+        label: "Echo Level",
+        min: 1,
+        max: 10,
+        value: delay.echoLevel,
+        valueText: `${delayEchoGain(delay.echoLevel).toFixed(2)}×`,
+        onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { echoLevel: Number(input.value) }),
       }),
       createEffectSettingsSlider({
         id: "pattern-effect-delay-tone",
@@ -3800,7 +3877,7 @@ function renderPatternEffectSettingsControls(effectKey) {
         min: 0,
         max: 100,
         value: delay.tone,
-        valueText: formatPercent(delay.tone),
+        valueText: formatDelayTone(delay.tone),
         onInput: (input) => updateTrackDelay(getSelectedEffectSettingsState().trackIndex, { tone: Number(input.value) }),
       }),
       createEffectSettingsSlider({
@@ -3900,9 +3977,10 @@ function syncPatternEffectSettingsPanel() {
     const delay = getTrackDelay(track);
     [
       ["time", delay.time, formatDelayTime(delay.time)],
-      ["feedback", delay.feedback, formatPercent(delay.feedback, 95)],
-      ["decay", delay.decay, formatPercent(delay.decay)],
-      ["tone", delay.tone, formatPercent(delay.tone)],
+      ["repeats", delay.repeats, String(delay.repeats)],
+      ["decay", delay.decay, formatDelayDecay(delay.decay)],
+      ["echo-level", delay.echoLevel, `${delayEchoGain(delay.echoLevel).toFixed(2)}×`],
+      ["tone", delay.tone, formatDelayTone(delay.tone)],
       ["mix", delay.mix, formatPercent(delay.mix)],
     ].forEach(([key, value, text]) => {
       const input = root.querySelector(`#pattern-effect-delay-${key}`);
@@ -6793,12 +6871,14 @@ function syncDelayOverlay() {
   }
   ui.delayTime.value = String(delay.time);
   ui.delayTimeValue.textContent = formatDelayTime(delay.time);
-  ui.delayFeedback.value = String(delay.feedback);
-  ui.delayFeedbackValue.textContent = formatPercent(delay.feedback, 95);
+  ui.delayRepeats.value = String(delay.repeats);
+  ui.delayRepeatsValue.textContent = String(delay.repeats);
   ui.delayDecay.value = String(delay.decay);
-  ui.delayDecayValue.textContent = formatPercent(delay.decay);
+  ui.delayDecayValue.textContent = formatDelayDecay(delay.decay);
+  ui.delayEchoLevel.value = String(delay.echoLevel);
+  ui.delayEchoLevelValue.textContent = `${delayEchoGain(delay.echoLevel).toFixed(2)}×`;
   ui.delayTone.value = String(delay.tone);
-  ui.delayToneValue.textContent = formatPercent(delay.tone);
+  ui.delayToneValue.textContent = formatDelayTone(delay.tone);
   ui.delayMix.value = String(delay.mix);
   ui.delayMixValue.textContent = formatPercent(delay.mix);
 }
@@ -10172,11 +10252,14 @@ ui.filterOverlay.addEventListener("click", (event) => {
 ui.delayTime.addEventListener("input", () => {
   updateTrackDelay(state.delayOverlay.trackIndex, { time: Number(ui.delayTime.value) });
 });
-ui.delayFeedback.addEventListener("input", () => {
-  updateTrackDelay(state.delayOverlay.trackIndex, { feedback: Number(ui.delayFeedback.value) });
+ui.delayRepeats.addEventListener("input", () => {
+  updateTrackDelay(state.delayOverlay.trackIndex, { repeats: Number(ui.delayRepeats.value) });
 });
 ui.delayDecay.addEventListener("input", () => {
   updateTrackDelay(state.delayOverlay.trackIndex, { decay: Number(ui.delayDecay.value) });
+});
+ui.delayEchoLevel.addEventListener("input", () => {
+  updateTrackDelay(state.delayOverlay.trackIndex, { echoLevel: Number(ui.delayEchoLevel.value) });
 });
 ui.delayTone.addEventListener("input", () => {
   updateTrackDelay(state.delayOverlay.trackIndex, { tone: Number(ui.delayTone.value) });

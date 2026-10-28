@@ -1125,24 +1125,31 @@
             </div>
           </label>
           <label class="compact-field">
-            Feedback
+            Repeats
             <div class="slider-row">
-              <input id="delay-feedback" type="range" min="0" max="95" step="1" value="35" />
-              <span id="delay-feedback-value" class="value-pill">35%</span>
+              <input id="delay-repeats" type="range" min="1" max="5" step="1" value="3" />
+              <span id="delay-repeats-value" class="value-pill">3</span>
             </div>
           </label>
           <label class="compact-field">
             Decay
             <div class="slider-row">
-              <input id="delay-decay" type="range" min="0" max="100" step="1" value="55" />
-              <span id="delay-decay-value" class="value-pill">55%</span>
+              <input id="delay-decay" type="range" min="100" max="1000" step="10" value="500" />
+              <span id="delay-decay-value" class="value-pill">500 ms</span>
+            </div>
+          </label>
+          <label class="compact-field">
+            Echo Level
+            <div class="slider-row">
+              <input id="delay-echo-level" type="range" min="1" max="10" step="1" value="7" />
+              <span id="delay-echo-level-value" class="value-pill">1.00×</span>
             </div>
           </label>
           <label class="compact-field">
             Tone
             <div class="slider-row">
               <input id="delay-tone" type="range" min="0" max="100" step="1" value="60" />
-              <span id="delay-tone-value" class="value-pill">60%</span>
+              <span id="delay-tone-value" class="value-pill">60% · High-pass</span>
             </div>
           </label>
           <label class="compact-field">
