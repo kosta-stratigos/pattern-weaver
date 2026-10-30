@@ -115,7 +115,8 @@
                     <label class="compact-field voice-type-control">
                       Voice Type
                       <select id="mode">
-                        <option value="synth">Synth</option>
+                        <option value="synth">Mono Synth</option>
+                        <option value="fm">FM Synth</option>
                         <option value="granular">Grain</option>
                         <option value="chop">Chop</option>
                       </select>
@@ -357,7 +358,7 @@
                   </section>
                 </section>
 
-                <section id="synth-settings-group" class="control-group synth-settings-group ui-hidden" aria-label="Synth voice settings">
+                <section id="synth-settings-group" class="control-group synth-settings-group ui-hidden" aria-label="Mono Synth voice settings">
                   <div class="synth-settings-layout">
                     <section class="control-group nested-control-group synth-wave-group" aria-labelledby="synth-wave-group-title">
                       <div class="control-group-head">
@@ -433,6 +434,51 @@
                           <span id="synth-fold-value" class="value-pill">0%</span>
                         </div>
                       </label>
+                    </section>
+                  </div>
+                </section>
+
+                <section id="fm-settings-group" class="control-group synth-settings-group ui-hidden" aria-label="FM Synth voice settings">
+                  <div class="synth-settings-layout fm-settings-layout">
+                    <section class="control-group nested-control-group fm-operator-pane" aria-labelledby="fm-mod1-title">
+                      <div class="control-group-head"><h3 id="fm-mod1-title">Modulator 1</h3></div>
+                      <label class="compact-field">Wave Type<select id="fm-mod1-wave"><option value="disabled">Disabled</option><option value="sine">Sine</option><option value="triangle">Triangle</option><option value="sawtooth">Saw</option><option value="square">Square</option><option value="noise">Noise</option></select></label>
+                      <div class="fm-sculpt-controls" aria-label="Modulator 1 wave sculpt">
+                        <div class="control-group-head"><h3>Wave Sculpt</h3></div>
+                        <label class="compact-field">Shape<div class="slider-row"><input id="fm-mod1-shape" type="range" min="0" max="100" value="50" /><span id="fm-mod1-shape-value" class="value-pill">50%</span></div></label>
+                        <label class="compact-field">Fold<div class="slider-row"><input id="fm-mod1-fold" type="range" min="0" max="100" value="0" /><span id="fm-mod1-fold-value" class="value-pill">0%</span></div></label>
+                      </div>
+                      <label id="fm-mod1-ratio-field" class="compact-field">Frequency Ratio<div class="slider-row"><input id="fm-mod1-ratio" type="range" min="0.5" max="16" step="0.5" value="1" /><span id="fm-mod1-ratio-value" class="value-pill">1.0×</span></div></label>
+                      <label class="compact-field">Modulation Depth<div class="slider-row"><input id="fm-mod1-depth" type="range" min="0" max="20" step="0.1" value="2" /><span id="fm-mod1-depth-value" class="value-pill">2.0</span></div></label>
+                    </section>
+                    <section class="control-group nested-control-group fm-operator-pane" aria-labelledby="fm-mod2-title">
+                      <div class="control-group-head"><h3 id="fm-mod2-title">Modulator 2</h3></div>
+                      <label class="compact-field">Wave Type<select id="fm-mod2-wave"><option value="sine">Sine</option><option value="triangle">Triangle</option><option value="sawtooth">Saw</option><option value="square">Square</option><option value="noise">Noise</option></select></label>
+                      <div class="fm-sculpt-controls" aria-label="Modulator 2 wave sculpt">
+                        <div class="control-group-head"><h3>Wave Sculpt</h3></div>
+                        <label class="compact-field">Shape<div class="slider-row"><input id="fm-mod2-shape" type="range" min="0" max="100" value="50" /><span id="fm-mod2-shape-value" class="value-pill">50%</span></div></label>
+                        <label class="compact-field">Fold<div class="slider-row"><input id="fm-mod2-fold" type="range" min="0" max="100" value="0" /><span id="fm-mod2-fold-value" class="value-pill">0%</span></div></label>
+                      </div>
+                      <label id="fm-mod2-ratio-field" class="compact-field">Frequency Ratio<div class="slider-row"><input id="fm-mod2-ratio" type="range" min="0.5" max="16" step="0.5" value="2" /><span id="fm-mod2-ratio-value" class="value-pill">2.0×</span></div></label>
+                      <label class="compact-field">Modulation Depth<div class="slider-row"><input id="fm-mod2-depth" type="range" min="0" max="20" step="0.1" value="2" /><span id="fm-mod2-depth-value" class="value-pill">2.0</span></div></label>
+                    </section>
+                    <section class="control-group nested-control-group fm-operator-pane" aria-labelledby="fm-carrier-title">
+                      <div class="control-group-head"><h3 id="fm-carrier-title">Carrier</h3></div>
+                      <label class="compact-field">Wave Type<select id="fm-carrier-wave"><option value="sine">Sine</option><option value="triangle">Triangle</option><option value="sawtooth">Saw</option><option value="square">Square</option></select></label>
+                      <div class="fm-sculpt-controls" aria-label="Carrier wave sculpt">
+                        <div class="control-group-head"><h3>Wave Sculpt</h3></div>
+                        <label class="compact-field">Shape<div class="slider-row"><input id="fm-carrier-shape" type="range" min="0" max="100" value="50" /><span id="fm-carrier-shape-value" class="value-pill">50%</span></div></label>
+                        <label class="compact-field">Fold<div class="slider-row"><input id="fm-carrier-fold" type="range" min="0" max="100" value="0" /><span id="fm-carrier-fold-value" class="value-pill">0%</span></div></label>
+                      </div>
+                      <label class="compact-field">Feedback Send<select id="fm-feedback-send"><option value="off">Off</option><option value="mod1">Modulator 1</option><option value="mod2">Modulator 2</option></select></label>
+                      <label id="fm-feedback-amount-field" class="compact-field">Feedback Amount<div class="slider-row"><input id="fm-feedback-amount" type="range" min="0" max="100" value="0" /><span id="fm-feedback-amount-value" class="value-pill">0%</span></div></label>
+                    </section>
+                    <section class="control-group nested-control-group fm-operator-pane" aria-labelledby="fm-output-title">
+                      <div class="control-group-head"><h3 id="fm-output-title">Output / Filter</h3></div>
+                      <label class="compact-field">Output Level<div class="slider-row"><input id="fm-level" type="range" min="0" max="100" value="70" /><span id="fm-level-value" class="value-pill">70%</span></div></label>
+                      <label class="compact-field">Filter Type<select id="fm-filter-type"><option value="lowpass">Low Pass</option><option value="bandpass">Band Pass</option><option value="highpass">High Pass</option></select></label>
+                      <label class="compact-field">Cutoff<div class="slider-row"><input id="fm-filter-frequency" type="range" min="20" max="16000" value="16000" /><span id="fm-filter-frequency-value" class="value-pill">16.00 kHz</span></div></label>
+                      <label class="compact-field">Resonance<div class="slider-row"><input id="fm-filter-q" type="range" min="0.1" max="20" step="0.1" value="0.8" /><span id="fm-filter-q-value" class="value-pill">0.8</span></div></label>
                     </section>
                   </div>
                 </section>

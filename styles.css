@@ -775,6 +775,28 @@ h2 {
   align-items: start;
 }
 
+.fm-settings-layout {
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+}
+
+.fm-operator-pane {
+  align-content: start;
+  min-width: 0;
+}
+
+.fm-sculpt-controls {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--pane-radius);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.fm-sculpt-controls .compact-field {
+  margin: 0;
+}
+
 .synth-settings-group,
 .sample-voice-settings-group {
   margin-bottom: 10px;
@@ -2409,6 +2431,10 @@ input[type="range"]::-moz-range-thumb {
   }
 
   .synth-settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .fm-settings-layout {
     grid-template-columns: 1fr;
   }
 

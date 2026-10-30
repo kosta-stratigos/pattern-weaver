@@ -71,6 +71,7 @@ const ui = {
   grainWaveform: document.querySelector("#grain-waveform"),
   grainWaveformOverview: document.querySelector("#grain-waveform-overview"),
   synthSettingsGroup: document.querySelector("#synth-settings-group"),
+  fmSettingsGroup: document.querySelector("#fm-settings-group"),
   workspaceTabs: Array.from(document.querySelectorAll("[data-workspace-tab]")),
   workspacePanels: Array.from(document.querySelectorAll("[data-workspace-panel]")),
   pitchLanes: document.querySelector("#pitch-lanes"),
@@ -155,6 +156,42 @@ const ui = {
   synthFilterQ: document.querySelector("#synth-filter-q"),
   synthFilterQValue: document.querySelector("#synth-filter-q-value"),
   synthWaveformScope: document.querySelector("#synth-waveform-scope"),
+  fmMod1Wave: document.querySelector("#fm-mod1-wave"),
+  fmMod1Shape: document.querySelector("#fm-mod1-shape"),
+  fmMod1ShapeValue: document.querySelector("#fm-mod1-shape-value"),
+  fmMod1Fold: document.querySelector("#fm-mod1-fold"),
+  fmMod1FoldValue: document.querySelector("#fm-mod1-fold-value"),
+  fmMod1Ratio: document.querySelector("#fm-mod1-ratio"),
+  fmMod1RatioField: document.querySelector("#fm-mod1-ratio-field"),
+  fmMod1RatioValue: document.querySelector("#fm-mod1-ratio-value"),
+  fmMod1Depth: document.querySelector("#fm-mod1-depth"),
+  fmMod1DepthValue: document.querySelector("#fm-mod1-depth-value"),
+  fmMod2Wave: document.querySelector("#fm-mod2-wave"),
+  fmMod2Shape: document.querySelector("#fm-mod2-shape"),
+  fmMod2ShapeValue: document.querySelector("#fm-mod2-shape-value"),
+  fmMod2Fold: document.querySelector("#fm-mod2-fold"),
+  fmMod2FoldValue: document.querySelector("#fm-mod2-fold-value"),
+  fmMod2Ratio: document.querySelector("#fm-mod2-ratio"),
+  fmMod2RatioField: document.querySelector("#fm-mod2-ratio-field"),
+  fmMod2RatioValue: document.querySelector("#fm-mod2-ratio-value"),
+  fmMod2Depth: document.querySelector("#fm-mod2-depth"),
+  fmMod2DepthValue: document.querySelector("#fm-mod2-depth-value"),
+  fmCarrierWave: document.querySelector("#fm-carrier-wave"),
+  fmCarrierShape: document.querySelector("#fm-carrier-shape"),
+  fmCarrierShapeValue: document.querySelector("#fm-carrier-shape-value"),
+  fmCarrierFold: document.querySelector("#fm-carrier-fold"),
+  fmCarrierFoldValue: document.querySelector("#fm-carrier-fold-value"),
+  fmFeedbackSend: document.querySelector("#fm-feedback-send"),
+  fmFeedbackAmount: document.querySelector("#fm-feedback-amount"),
+  fmFeedbackAmountValue: document.querySelector("#fm-feedback-amount-value"),
+  fmFeedbackAmountField: document.querySelector("#fm-feedback-amount-field"),
+  fmLevel: document.querySelector("#fm-level"),
+  fmLevelValue: document.querySelector("#fm-level-value"),
+  fmFilterType: document.querySelector("#fm-filter-type"),
+  fmFilterFrequency: document.querySelector("#fm-filter-frequency"),
+  fmFilterFrequencyValue: document.querySelector("#fm-filter-frequency-value"),
+  fmFilterQ: document.querySelector("#fm-filter-q"),
+  fmFilterQValue: document.querySelector("#fm-filter-q-value"),
   effectsMatrix: document.querySelector("#effects-matrix"),
   patternEffectSettingsTitle: document.querySelector("#pattern-effect-settings-title"),
   patternEffectSettingsTrack: document.querySelector("#pattern-effect-settings-track"),
@@ -341,6 +378,9 @@ const TRACK_ENVELOPE_LOOP_SPEED_MIN_HZ = 0.25;
 const TRACK_ENVELOPE_LOOP_SPEED_MAX_HZ = 16;
 const TRACK_ENVELOPE_LOOP_SPEED_DEFAULT_HZ = 4;
 const SYNTH_WAVES = ["sine", "triangle", "sawtooth", "square"];
+const FM_MODULATOR_WAVES = [...SYNTH_WAVES, "noise"];
+const FM_MOD1_WAVES = [...FM_MODULATOR_WAVES, "disabled"];
+const FM_FEEDBACK_SENDS = ["off", "mod1", "mod2"];
 const GRAIN_LOCATION_DEFAULT = "fixed";
 const GRAIN_SPACING_MAX_MS = 200;
 const GRAIN_ENVELOPE_MAX_MS = 100;
@@ -2581,6 +2621,161 @@ class PlaybackLayer {
     return handle;
   }
 
+  triggerFmSynth(settings, when = this.audioContext.currentTime, noteDuration = 0.1) {
+    const audioContext = this.audioContext;
+    const baseFrequency = midiToFrequency(settings.tuneMidi);
+    let pitchRatio = this.getMomentaryPitchRatio(settings.trackIndex);
+    const busInput = this.trackBuses?.[settings.trackIndex]?.input ?? this.output;
+    const createOperator = (wave, shape, fold, ratio) => {
+      const isNoise = wave === "noise";
+      const isDisabled = wave === "disabled";
+      const source = isDisabled
+        ? audioContext.createConstantSource()
+        : isNoise ? audioContext.createBufferSource() : audioContext.createOscillator();
+      const inputGain = audioContext.createGain();
+      let output = inputGain;
+      let waveShaper = null;
+      inputGain.gain.value = 1;
+      if (isNoise) {
+        source.buffer = this.noiseBuffer;
+        source.loop = true;
+      } else if (isDisabled) {
+        source.offset.setValueAtTime(0, when);
+      } else {
+        source.type = SYNTH_WAVES.includes(wave) ? wave : "sine";
+        const periodicWave = createSynthPeriodicWave(audioContext, wave, shape);
+        if (periodicWave) source.setPeriodicWave(periodicWave);
+        source.frequency.setValueAtTime(baseFrequency * ratio, when);
+      }
+      source.connect(inputGain);
+      if (fold > 0.1 && !isDisabled) {
+        waveShaper = audioContext.createWaveShaper();
+        waveShaper.curve = buildWaveFoldCurve(fold);
+        waveShaper.oversample = "4x";
+        inputGain.connect(waveShaper);
+        output = waveShaper;
+      }
+      return {
+        source,
+        inputGain,
+        output,
+        waveShaper,
+        isNoise,
+        isDisabled,
+        baseFrequency: baseFrequency * ratio,
+      };
+    };
+    const mod1 = createOperator(settings.fmMod1Wave, settings.fmMod1Shape, settings.fmMod1Fold, settings.fmMod1Ratio);
+    const mod2 = createOperator(settings.fmMod2Wave, settings.fmMod2Shape, settings.fmMod2Fold, settings.fmMod2Ratio);
+    const carrier = createOperator(settings.fmCarrierWave, settings.fmCarrierShape, settings.fmCarrierFold, 1);
+    const mod1Depth = audioContext.createGain();
+    const mod2Depth = audioContext.createGain();
+    const ampGain = audioContext.createGain();
+    const filterNode = audioContext.createBiquadFilter();
+    const holdDuration = Math.max(0.05, noteDuration);
+    const level = clampSynthLevel(settings.fmLevel, 70) / 100;
+    const mod1Ratio = clampNumber(settings.fmMod1Ratio, 0.5, 16, 1);
+    const mod2Ratio = clampNumber(settings.fmMod2Ratio, 0.5, 16, 2);
+    const mod1DepthValue = clampNumber(settings.fmMod1Depth, 0, 20, 2);
+    const mod2DepthValue = clampNumber(settings.fmMod2Depth, 0, 20, 2);
+    const feedbackSend = FM_FEEDBACK_SENDS.includes(settings.fmFeedbackSend) ? settings.fmFeedbackSend : "off";
+    const feedbackAmount = clampNoiseMix(settings.fmFeedbackAmount, 0) / 100;
+    const targetParameter = (operator) => operator.isNoise || operator.isDisabled ? operator.inputGain.gain : operator.source.frequency;
+    const calculateDepth = (operator, depth, targetFrequency) => {
+      if (operator.isDisabled) return 0;
+      if (operator.isNoise) return targetFrequency * (depth / 10);
+      return operator.baseFrequency * pitchRatio * depth;
+    };
+    const setFrequencies = (nextPitchRatio, time, rampSeconds = 0) => {
+      pitchRatio = nextPitchRatio;
+      const carrierHz = baseFrequency * pitchRatio;
+      const mod1Hz = baseFrequency * mod1Ratio * pitchRatio;
+      const mod2Hz = baseFrequency * mod2Ratio * pitchRatio;
+      mod1.baseFrequency = baseFrequency * mod1Ratio;
+      mod2.baseFrequency = baseFrequency * mod2Ratio;
+      if (rampSeconds > 0) {
+        if (!mod1.isNoise && !mod1.isDisabled) mod1.source.frequency.setTargetAtTime(mod1Hz, time, rampSeconds);
+        if (!mod2.isNoise) mod2.source.frequency.setTargetAtTime(mod2Hz, time, rampSeconds);
+        carrier.source.frequency.setTargetAtTime(carrierHz, time, rampSeconds);
+        mod1Depth.gain.setTargetAtTime(mod2.isNoise ? mod1DepthValue / 20 : calculateDepth(mod1, mod1DepthValue, mod2Hz), time, rampSeconds);
+        mod2Depth.gain.setTargetAtTime(calculateDepth(mod2, mod2DepthValue, carrierHz), time, rampSeconds);
+      } else {
+        if (!mod1.isNoise && !mod1.isDisabled) mod1.source.frequency.setValueAtTime(mod1Hz, time);
+        if (!mod2.isNoise) mod2.source.frequency.setValueAtTime(mod2Hz, time);
+        carrier.source.frequency.setValueAtTime(carrierHz, time);
+        mod1Depth.gain.setValueAtTime(mod2.isNoise ? mod1DepthValue / 20 : calculateDepth(mod1, mod1DepthValue, mod2Hz), time);
+        mod2Depth.gain.setValueAtTime(calculateDepth(mod2, mod2DepthValue, carrierHz), time);
+      }
+      if (feedbackGain) {
+        const feedbackDepth = feedbackSend === "mod1" && mod1.isNoise || feedbackSend === "mod2" && mod2.isNoise
+          ? feedbackAmount * 0.5
+          : carrierHz * feedbackAmount;
+        if (rampSeconds > 0) feedbackGain.gain.setTargetAtTime(feedbackDepth, time, rampSeconds);
+        else feedbackGain.gain.setValueAtTime(feedbackDepth, time);
+      }
+    };
+    const feedbackDelay = feedbackSend !== "off" && feedbackAmount > 0
+      ? audioContext.createDelay(1)
+      : null;
+    const feedbackGain = feedbackDelay ? audioContext.createGain() : null;
+    if (feedbackDelay && feedbackGain) {
+      feedbackDelay.delayTime.setValueAtTime(1 / audioContext.sampleRate, when);
+      carrier.output.connect(feedbackDelay);
+      feedbackDelay.connect(feedbackGain);
+      feedbackGain.connect(targetParameter(feedbackSend === "mod1" ? mod1 : mod2));
+    }
+    setFrequencies(pitchRatio, when);
+    mod1.output.connect(mod1Depth);
+    mod1Depth.connect(targetParameter(mod2));
+    mod2.output.connect(mod2Depth);
+    mod2Depth.connect(carrier.source.frequency);
+    filterNode.type = FILTER_TYPES.includes(settings.fmFilterType) ? settings.fmFilterType : "lowpass";
+    filterNode.frequency.setValueAtTime(clampFilterFrequency(settings.fmFilterFrequency), when);
+    filterNode.Q.setValueAtTime(clampFilterQ(settings.fmFilterQ), when);
+    carrier.output.connect(filterNode);
+    const envelopeTiming = applyTrackEnvelopeToGain(ampGain.gain, when, holdDuration, settings.envelope, level);
+    filterNode.connect(ampGain);
+    ampGain.connect(busInput);
+    this.scheduleTrackRepeats(settings.trackIndex, ampGain, when);
+    [mod1.source, mod2.source, carrier.source].forEach((source) => {
+      source.start(when);
+      source.stop(envelopeTiming.stopTime);
+    });
+
+    let stopped = false;
+    const handle = this.registerActiveVoice(settings.trackIndex, {
+      setPitchRatio: (ratio, rampSeconds = 0.025) => {
+        setFrequencies(ratio, audioContext.currentTime, rampSeconds);
+      },
+      stop: (stopWhen = audioContext.currentTime) => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          ampGain.gain.cancelScheduledValues(stopWhen);
+          ampGain.gain.setTargetAtTime(0.0001, stopWhen, 0.015);
+          [mod1.source, mod2.source, carrier.source].forEach((source) => source.stop(stopWhen + 0.05));
+        } catch {}
+        this.unregisterActiveVoice(settings.trackIndex, handle);
+      },
+    });
+    const disconnectDelayMs = Math.ceil((envelopeTiming.stopTime - audioContext.currentTime + 0.1) * 1000);
+    window.setTimeout(() => {
+      [mod1, mod2, carrier].forEach((operator) => {
+        operator.source.disconnect();
+        operator.inputGain.disconnect();
+        operator.waveShaper?.disconnect();
+      });
+      mod1Depth.disconnect();
+      mod2Depth.disconnect();
+      feedbackDelay?.disconnect();
+      feedbackGain?.disconnect();
+      filterNode.disconnect();
+      ampGain.disconnect();
+      this.unregisterActiveVoice(settings.trackIndex, handle);
+    }, Math.max(0, disconnectDelayMs));
+    return handle;
+  }
+
   triggerTrack(track, when = this.audioContext.currentTime, sliceIndex = null, noteDuration = null, pitchOverride = null) {
     const playbackTrack = getTrackPlaybackSettings(track);
     if (playbackTrack.mode === "synth") {
@@ -2602,6 +2797,13 @@ class PlaybackLayer {
         when,
         noteDuration,
       );
+    }
+    if (playbackTrack.mode === "fm") {
+      return this.triggerFmSynth({
+        ...playbackTrack,
+        tuneMidi: pitchOverride?.pitchMidi ?? playbackTrack.synthTuneMidi,
+        envelope: playbackTrack.envelope,
+      }, when, noteDuration);
     }
     if (playbackTrack.mode === "granular") {
       return this.triggerGranular(
@@ -2658,6 +2860,13 @@ class PlaybackLayer {
         when,
         sustainDuration,
       );
+    }
+    if (playbackTrack.mode === "fm") {
+      return this.triggerFmSynth({
+        ...playbackTrack,
+        tuneMidi: pitchOverride?.pitchMidi ?? playbackTrack.synthTuneMidi,
+        envelope: holdEnvelope,
+      }, when, sustainDuration);
     }
     if (playbackTrack.mode === "granular") {
       return this.triggerGranular(
@@ -2963,6 +3172,25 @@ function createVoiceConfig(id) {
     synthFilterType: "lowpass",
     synthFilterFrequency: 16000,
     synthFilterQ: 0.8,
+    fmMod1Wave: "sine",
+    fmMod1Shape: 50,
+    fmMod1Fold: 0,
+    fmMod1Ratio: 1,
+    fmMod1Depth: 2,
+    fmMod2Wave: "sine",
+    fmMod2Shape: 50,
+    fmMod2Fold: 0,
+    fmMod2Ratio: 2,
+    fmMod2Depth: 2,
+    fmCarrierWave: "sine",
+    fmCarrierShape: 50,
+    fmCarrierFold: 0,
+    fmFeedbackSend: "off",
+    fmFeedbackAmount: 0,
+    fmLevel: 70,
+    fmFilterType: "lowpass",
+    fmFilterFrequency: 16000,
+    fmFilterQ: 0.8,
   };
 }
 
@@ -4689,7 +4917,7 @@ function advanceComposerSlot() {
 }
 
 function trackUsesSample(track) {
-  return getTrackVoice(track).mode !== "synth";
+  return ["granular", "chop"].includes(getTrackVoice(track).mode);
 }
 
 function hasAnySampleBasedTracks() {
@@ -4970,11 +5198,32 @@ function serializeVoice(voice) {
     synthFilterType: voice.synthFilterType,
     synthFilterFrequency: voice.synthFilterFrequency,
     synthFilterQ: voice.synthFilterQ,
+    fmMod1Wave: voice.fmMod1Wave,
+    fmMod1Shape: voice.fmMod1Shape,
+    fmMod1Fold: voice.fmMod1Fold,
+    fmMod1Ratio: voice.fmMod1Ratio,
+    fmMod1Depth: voice.fmMod1Depth,
+    fmMod2Wave: voice.fmMod2Wave,
+    fmMod2Shape: voice.fmMod2Shape,
+    fmMod2Fold: voice.fmMod2Fold,
+    fmMod2Ratio: voice.fmMod2Ratio,
+    fmMod2Depth: voice.fmMod2Depth,
+    fmCarrierWave: voice.fmCarrierWave,
+    fmCarrierShape: voice.fmCarrierShape,
+    fmCarrierFold: voice.fmCarrierFold,
+    fmFeedbackSend: voice.fmFeedbackSend,
+    fmFeedbackAmount: voice.fmFeedbackAmount,
+    fmLevel: voice.fmLevel,
+    fmFilterType: voice.fmFilterType,
+    fmFilterFrequency: voice.fmFilterFrequency,
+    fmFilterQ: voice.fmFilterQ,
   };
 }
 
 function normalizeVoice(index, source = {}) {
   const fallback = createVoiceConfig(index + 1);
+  const fmMod1Wave = FM_MOD1_WAVES.includes(source.fmMod1Wave) ? source.fmMod1Wave : fallback.fmMod1Wave;
+  const fmFeedbackSend = FM_FEEDBACK_SENDS.includes(source.fmFeedbackSend) ? source.fmFeedbackSend : fallback.fmFeedbackSend;
   const legacyGrainCount = Number.isFinite(Number(source.grainDensity))
     ? Math.max(1, Math.min(12, Math.round(Number(source.grainDensity) * 0.35)))
     : fallback.grainCount;
@@ -4982,7 +5231,7 @@ function normalizeVoice(index, source = {}) {
   return {
     ...fallback,
     name: normalizeVoiceName(source.name, fallback.name),
-    mode: ["synth", "chop", "granular"].includes(source.mode) ? source.mode : fallback.mode,
+    mode: ["synth", "fm", "chop", "granular"].includes(source.mode) ? source.mode : fallback.mode,
     sampleId: typeof source.sampleId === "string" && source.sampleId.trim() ? source.sampleId : fallback.sampleId,
     sampleName: typeof source.sampleName === "string" && source.sampleName.trim() ? source.sampleName : fallback.sampleName,
     sampleSource: ["library", "local"].includes(source.sampleSource) ? source.sampleSource : fallback.sampleSource,
@@ -5025,6 +5274,25 @@ function normalizeVoice(index, source = {}) {
     synthFilterType: FILTER_TYPES.includes(source.synthFilterType) ? source.synthFilterType : fallback.synthFilterType,
     synthFilterFrequency: clampFilterFrequency(source.synthFilterFrequency ?? fallback.synthFilterFrequency),
     synthFilterQ: clampFilterQ(source.synthFilterQ ?? fallback.synthFilterQ),
+    fmMod1Wave,
+    fmMod1Shape: clampSynthWaveShape(source.fmMod1Shape, fallback.fmMod1Shape),
+    fmMod1Fold: clampSynthFoldAmount(source.fmMod1Fold, fallback.fmMod1Fold),
+    fmMod1Ratio: clampNumber(source.fmMod1Ratio, 0.5, 16, fallback.fmMod1Ratio),
+    fmMod1Depth: clampNumber(source.fmMod1Depth, 0, 20, fallback.fmMod1Depth),
+    fmMod2Wave: FM_MODULATOR_WAVES.includes(source.fmMod2Wave) ? source.fmMod2Wave : fallback.fmMod2Wave,
+    fmMod2Shape: clampSynthWaveShape(source.fmMod2Shape, fallback.fmMod2Shape),
+    fmMod2Fold: clampSynthFoldAmount(source.fmMod2Fold, fallback.fmMod2Fold),
+    fmMod2Ratio: clampNumber(source.fmMod2Ratio, 0.5, 16, fallback.fmMod2Ratio),
+    fmMod2Depth: clampNumber(source.fmMod2Depth, 0, 20, fallback.fmMod2Depth),
+    fmCarrierWave: SYNTH_WAVES.includes(source.fmCarrierWave) ? source.fmCarrierWave : fallback.fmCarrierWave,
+    fmCarrierShape: clampSynthWaveShape(source.fmCarrierShape, fallback.fmCarrierShape),
+    fmCarrierFold: clampSynthFoldAmount(source.fmCarrierFold, fallback.fmCarrierFold),
+    fmFeedbackSend: fmMod1Wave === "disabled" && fmFeedbackSend === "mod1" ? "off" : fmFeedbackSend,
+    fmFeedbackAmount: clampNoiseMix(source.fmFeedbackAmount ?? fallback.fmFeedbackAmount, fallback.fmFeedbackAmount),
+    fmLevel: clampSynthLevel(source.fmLevel ?? fallback.fmLevel, fallback.fmLevel),
+    fmFilterType: FILTER_TYPES.includes(source.fmFilterType) ? source.fmFilterType : fallback.fmFilterType,
+    fmFilterFrequency: clampFilterFrequency(source.fmFilterFrequency ?? fallback.fmFilterFrequency),
+    fmFilterQ: clampFilterQ(source.fmFilterQ ?? fallback.fmFilterQ),
   };
 }
 
@@ -5333,8 +5601,10 @@ function hexToRgba(hex, alpha) {
 }
 
 function formatModeLabel(mode) {
-  if (mode === "synth") return "synth";
-  return mode === "granular" ? "grain" : mode;
+  if (mode === "synth") return "Mono Synth";
+  if (mode === "fm") return "FM Synth";
+  if (mode === "granular") return "Grain";
+  return mode === "chop" ? "Chop" : mode;
 }
 
 function formatVoiceName(track, index) {
@@ -5518,7 +5788,7 @@ function isBlackKey(midiNote) {
 
 function getTrackPitchMidi(track) {
   const voice = getTrackVoice(track);
-  if (voice.mode === "synth") return voice.synthTuneMidi;
+  if (voice.mode === "synth" || voice.mode === "fm") return voice.synthTuneMidi;
   return PITCH_LANE_REFERENCE_MIDI + voice.pitch;
 }
 
@@ -6350,6 +6620,25 @@ function getTrackPlaybackSettings(track) {
     synthFilterType: voice.synthFilterType,
     synthFilterFrequency: voice.synthFilterFrequency,
     synthFilterQ: voice.synthFilterQ,
+    fmMod1Wave: voice.fmMod1Wave,
+    fmMod1Shape: voice.fmMod1Shape,
+    fmMod1Fold: voice.fmMod1Fold,
+    fmMod1Ratio: voice.fmMod1Ratio,
+    fmMod1Depth: voice.fmMod1Depth,
+    fmMod2Wave: voice.fmMod2Wave,
+    fmMod2Shape: voice.fmMod2Shape,
+    fmMod2Fold: voice.fmMod2Fold,
+    fmMod2Ratio: voice.fmMod2Ratio,
+    fmMod2Depth: voice.fmMod2Depth,
+    fmCarrierWave: voice.fmCarrierWave,
+    fmCarrierShape: voice.fmCarrierShape,
+    fmCarrierFold: voice.fmCarrierFold,
+    fmFeedbackSend: voice.fmFeedbackSend,
+    fmFeedbackAmount: voice.fmFeedbackAmount,
+    fmLevel: voice.fmLevel,
+    fmFilterType: voice.fmFilterType,
+    fmFilterFrequency: voice.fmFilterFrequency,
+    fmFilterQ: voice.fmFilterQ,
     voiceName: voice.name,
     voiceId: voice.id,
     trackIndex: track.id - 1,
@@ -9337,16 +9626,63 @@ function syncUi() {
   ui.synthFilterFrequencyValue.textContent = formatFilterFrequencyValue(voice.synthFilterFrequency);
   ui.synthFilterQ.value = String(voice.synthFilterQ);
   ui.synthFilterQValue.textContent = voice.synthFilterQ.toFixed(1);
+  [
+    { id: 1, wave: ui.fmMod1Wave, shape: ui.fmMod1Shape, shapeValue: ui.fmMod1ShapeValue, fold: ui.fmMod1Fold, foldValue: ui.fmMod1FoldValue, ratio: ui.fmMod1Ratio, ratioField: ui.fmMod1RatioField, ratioValue: ui.fmMod1RatioValue, depth: ui.fmMod1Depth, depthValue: ui.fmMod1DepthValue },
+    { id: 2, wave: ui.fmMod2Wave, shape: ui.fmMod2Shape, shapeValue: ui.fmMod2ShapeValue, fold: ui.fmMod2Fold, foldValue: ui.fmMod2FoldValue, ratio: ui.fmMod2Ratio, ratioField: ui.fmMod2RatioField, ratioValue: ui.fmMod2RatioValue, depth: ui.fmMod2Depth, depthValue: ui.fmMod2DepthValue },
+  ].forEach((controls) => {
+    const wave = voice[`fmMod${controls.id}Wave`];
+    const ratio = voice[`fmMod${controls.id}Ratio`];
+    const disabled = wave === "disabled";
+    const noise = wave === "noise";
+    controls.wave.value = wave;
+    controls.shape.value = String(voice[`fmMod${controls.id}Shape`]);
+    controls.shapeValue.textContent = `${Math.round(voice[`fmMod${controls.id}Shape`])}%`;
+    controls.shape.disabled = noise || disabled;
+    controls.shape.closest(".compact-field")?.classList.toggle("is-disabled", noise || disabled);
+    controls.fold.value = String(voice[`fmMod${controls.id}Fold`]);
+    controls.foldValue.textContent = `${Math.round(voice[`fmMod${controls.id}Fold`])}%`;
+    controls.fold.disabled = disabled;
+    controls.fold.closest(".compact-field")?.classList.toggle("is-disabled", disabled);
+    controls.ratio.value = String(ratio);
+    controls.ratioValue.textContent = `${ratio.toFixed(1)}×`;
+    controls.ratio.disabled = noise || disabled;
+    controls.ratioField.classList.toggle("is-disabled", noise || disabled);
+    controls.depth.value = String(voice[`fmMod${controls.id}Depth`]);
+    controls.depthValue.textContent = voice[`fmMod${controls.id}Depth`].toFixed(1);
+    controls.depth.disabled = disabled;
+    controls.depth.closest(".compact-field")?.classList.toggle("is-disabled", disabled);
+  });
+  ui.fmCarrierWave.value = voice.fmCarrierWave;
+  ui.fmCarrierShape.value = String(voice.fmCarrierShape);
+  ui.fmCarrierShapeValue.textContent = `${Math.round(voice.fmCarrierShape)}%`;
+  ui.fmCarrierFold.value = String(voice.fmCarrierFold);
+  ui.fmCarrierFoldValue.textContent = `${Math.round(voice.fmCarrierFold)}%`;
+  ui.fmFeedbackSend.value = voice.fmFeedbackSend;
+  const mod1FeedbackOption = ui.fmFeedbackSend.querySelector('option[value="mod1"]');
+  if (mod1FeedbackOption) mod1FeedbackOption.disabled = voice.fmMod1Wave === "disabled";
+  ui.fmFeedbackAmount.value = String(voice.fmFeedbackAmount);
+  ui.fmFeedbackAmountValue.textContent = `${Math.round(voice.fmFeedbackAmount)}%`;
+  ui.fmFeedbackAmount.disabled = voice.fmFeedbackSend === "off";
+  ui.fmFeedbackAmountField.classList.toggle("is-disabled", voice.fmFeedbackSend === "off");
+  ui.fmLevel.value = String(voice.fmLevel);
+  ui.fmLevelValue.textContent = `${Math.round(voice.fmLevel)}%`;
+  ui.fmFilterType.value = voice.fmFilterType;
+  ui.fmFilterFrequency.value = String(voice.fmFilterFrequency);
+  ui.fmFilterFrequencyValue.textContent = formatFilterFrequencyValue(voice.fmFilterFrequency);
+  ui.fmFilterQ.value = String(voice.fmFilterQ);
+  ui.fmFilterQValue.textContent = voice.fmFilterQ.toFixed(1);
   ui.pitch?.toggleAttribute("disabled", true);
   ui.voicePitchField?.classList.add("is-disabled");
   const synthMode = voice.mode === "synth";
+  const fmMode = voice.mode === "fm";
   const chopMode = voice.mode === "chop";
   const sampleVoiceModeLabel = voice.mode === "chop" ? "Chop" : "Grain";
   const sampleVoiceTitle = document.querySelector("#sample-voice-group-title");
   if (sampleVoiceTitle instanceof HTMLElement) sampleVoiceTitle.textContent = sampleVoiceModeLabel;
-  ui.sampleVoiceSettingsGroup.classList.toggle("ui-hidden", synthMode || chopMode);
+  ui.sampleVoiceSettingsGroup.classList.toggle("ui-hidden", synthMode || fmMode || chopMode);
   ui.chopSettingsGroup?.classList.toggle("ui-hidden", !chopMode);
   ui.synthSettingsGroup.classList.toggle("ui-hidden", !synthMode);
+  ui.fmSettingsGroup.classList.toggle("ui-hidden", !fmMode);
   ui.bpm.value = String(state.bpm);
   ui.bpmValue.textContent = String(state.bpm);
   ui.swing.value = String(state.swing);
@@ -10232,6 +10568,35 @@ ui.synthFold.addEventListener("input", () => updateSelectedVoice({ synthFoldAmou
 ui.synthFilterType.addEventListener("change", () => updateSelectedVoice({ synthFilterType: ui.synthFilterType.value }));
 ui.synthFilterFrequency.addEventListener("input", () => updateSelectedVoice({ synthFilterFrequency: Number(ui.synthFilterFrequency.value) }));
 ui.synthFilterQ.addEventListener("input", () => updateSelectedVoice({ synthFilterQ: Number(ui.synthFilterQ.value) }));
+[
+  [ui.fmMod1Shape, "fmMod1Shape", "input", (input) => Number(input.value)],
+  [ui.fmMod1Fold, "fmMod1Fold", "input", (input) => Number(input.value)],
+  [ui.fmMod1Ratio, "fmMod1Ratio", "input", (input) => Number(input.value)],
+  [ui.fmMod1Depth, "fmMod1Depth", "input", (input) => Number(input.value)],
+  [ui.fmMod2Wave, "fmMod2Wave", "change", (input) => input.value],
+  [ui.fmMod2Shape, "fmMod2Shape", "input", (input) => Number(input.value)],
+  [ui.fmMod2Fold, "fmMod2Fold", "input", (input) => Number(input.value)],
+  [ui.fmMod2Ratio, "fmMod2Ratio", "input", (input) => Number(input.value)],
+  [ui.fmMod2Depth, "fmMod2Depth", "input", (input) => Number(input.value)],
+  [ui.fmCarrierWave, "fmCarrierWave", "change", (input) => input.value],
+  [ui.fmCarrierShape, "fmCarrierShape", "input", (input) => Number(input.value)],
+  [ui.fmCarrierFold, "fmCarrierFold", "input", (input) => Number(input.value)],
+  [ui.fmFeedbackSend, "fmFeedbackSend", "change", (input) => input.value],
+  [ui.fmFeedbackAmount, "fmFeedbackAmount", "input", (input) => Number(input.value)],
+  [ui.fmLevel, "fmLevel", "input", (input) => Number(input.value)],
+  [ui.fmFilterType, "fmFilterType", "change", (input) => input.value],
+  [ui.fmFilterFrequency, "fmFilterFrequency", "input", (input) => Number(input.value)],
+  [ui.fmFilterQ, "fmFilterQ", "input", (input) => Number(input.value)],
+].forEach(([input, key, eventName, resolveValue]) => {
+  input.addEventListener(eventName, () => updateSelectedVoice({ [key]: resolveValue(input) }));
+});
+ui.fmMod1Wave.addEventListener("change", () => {
+  const patch = { fmMod1Wave: ui.fmMod1Wave.value };
+  if (ui.fmMod1Wave.value === "disabled" && getSelectedVoice().fmFeedbackSend === "mod1") {
+    patch.fmFeedbackSend = "off";
+  }
+  updateSelectedVoice(patch);
+});
 ui.filterFrequency.addEventListener("input", () => {
   updateTrackFilter(state.filterOverlay.trackIndex, { frequency: Number(ui.filterFrequency.value) });
 });
