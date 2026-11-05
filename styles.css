@@ -540,6 +540,12 @@ h2 {
   font-weight: 700;
 }
 
+.mixer-level-row {
+  position: relative;
+  width: 24px;
+  height: 114px;
+}
+
 .mixer-meter {
   position: relative;
   width: 24px;
@@ -555,13 +561,92 @@ h2 {
   touch-action: none;
 }
 
+.mixer-level-row .mixer-meter {
+  position: relative;
+  z-index: 2;
+  margin-top: 0;
+  margin-bottom: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.mixer-peak-meter {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 24px;
+  height: 100px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.mixer-peak-value {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  width: 40px;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+  font-size: 0.43rem;
+  line-height: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mixer-peak-track {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mixer-peak-fill {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--peak-fill, 0%);
+  background: #49be86;
+}
+
+.mixer-peak-meter.hot .mixer-peak-fill {
+  background: #e0b84d;
+}
+
+.mixer-peak-hold {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: var(--peak-hold, 0%);
+  left: 0;
+  height: 2px;
+  visibility: hidden;
+  background: #f5fff9;
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.7);
+}
+
+.mixer-peak-meter.clipping .mixer-peak-track {
+  outline: 1px solid var(--danger);
+  outline-offset: 1px;
+}
+
+.mixer-peak-meter.clipping .mixer-peak-value {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.mixer-peak-meter.clipping .mixer-peak-fill {
+  background: var(--danger);
+}
+
 .mixer-meter-fill {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   height: var(--meter-fill, 0%);
-  background: linear-gradient(180deg, rgba(255, 175, 95, 0.88), var(--track-color));
+  background: rgba(255, 255, 255, 0.13);
 }
 
 .mixer-meter-thumb {

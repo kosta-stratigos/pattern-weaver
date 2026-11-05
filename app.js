@@ -1580,7 +1580,12 @@ class PlaybackLayer {
     this.synthScopeSink.connect(audioContext.destination);
     this.output = audioContext.createGain();
     this.output.gain.value = 0.9;
-    this.output.connect(audioContext.destination);
+    this.masterAnalyser = audioContext.createAnalyser();
+    this.masterAnalyser.fftSize = 2048;
+    this.masterAnalyser.smoothingTimeConstant = 0;
+    this.masterPeakData = new Float32Array(this.masterAnalyser.fftSize);
+    this.output.connect(this.masterAnalyser);
+    this.masterAnalyser.connect(audioContext.destination);
     this.trackSustainedVoices = Array.from({ length: TRACK_COUNT }, () => null);
     this.trackBuses = Array.from({ length: TRACK_COUNT }, (_, index) => this.createTrackBus(index));
     this.trackBuses.forEach((_, index) => this.updateTrackBus(index, this.state.tracks[index]));
@@ -1612,6 +1617,10 @@ class PlaybackLayer {
     const dryGain = this.audioContext.createGain();
     const outputGain = this.audioContext.createGain();
     const panNode = this.audioContext.createStereoPanner();
+    const peakAnalyser = this.audioContext.createAnalyser();
+    peakAnalyser.fftSize = 2048;
+    peakAnalyser.smoothingTimeConstant = 0;
+    const peakData = new Float32Array(peakAnalyser.fftSize);
     const panCenter = this.audioContext.createConstantSource();
     const panLfo = this.audioContext.createOscillator();
     const panLfoDepth = this.audioContext.createGain();
@@ -1627,12 +1636,14 @@ class PlaybackLayer {
     const momentaryGain = this.audioContext.createGain();
     const momentaryFilter = this.audioContext.createBiquadFilter();
     const momentaryPanOffset = this.audioContext.createConstantSource();
+    const panLfoStartTime = this.audioContext.currentTime;
     const crackleNoiseSource = this.audioContext.createBufferSource();
     const crackleNoiseFilter = this.audioContext.createBiquadFilter();
     const crackleNoiseGain = this.audioContext.createGain();
 
     outputGain.connect(panNode);
-    panNode.connect(this.output);
+    panNode.connect(peakAnalyser);
+    peakAnalyser.connect(this.output);
     panNode.pan.value = 0;
     panCenter.offset.value = 0;
     panLfoDepth.gain.value = 0;
@@ -1674,7 +1685,7 @@ class PlaybackLayer {
     crackleNoiseGain.connect(momentaryFilter);
     momentaryFilter.connect(outputGain);
     panCenter.start();
-    panLfo.start();
+    panLfo.start(panLfoStartTime);
     momentaryPanOffset.start();
     crackleNoiseSource.start();
     gainCenter.start();
@@ -1687,8 +1698,13 @@ class PlaybackLayer {
       dryGain,
       outputGain,
       panNode,
+      peakAnalyser,
+      peakData,
       panCenter,
       panLfo,
+      panLfoPhase: 0,
+      panLfoPhaseTime: panLfoStartTime,
+      panLfoFrequency: panLfo.frequency.value,
       panLfoDepth,
       gainCenter,
       gainLfo,
@@ -1741,15 +1757,20 @@ class PlaybackLayer {
     const swellAmplitude = swell.enabled ? clampModulationAmount(swell.amount, 18) / 100 : 0;
     const driftFrequency = 1 / clampLfoRateSeconds(drift.rate, 1.5);
     const swellFrequency = 1 / clampLfoRateSeconds(swell.rate, 1.8);
+    const now = this.audioContext.currentTime;
+
+    bus.panLfoPhase = (bus.panLfoPhase + (2 * Math.PI * bus.panLfoFrequency * Math.max(0, now - bus.panLfoPhaseTime))) % (2 * Math.PI);
+    bus.panLfoPhaseTime = now;
+    bus.panLfoFrequency = driftFrequency;
 
     outputGain.gain.value = swellCenterValue;
     panNode.pan.value = 0;
-    panCenter.offset.setValueAtTime(driftCenter, this.audioContext.currentTime);
-    panLfo.frequency.setValueAtTime(driftFrequency, this.audioContext.currentTime);
-    panLfoDepth.gain.setValueAtTime(driftAmplitude, this.audioContext.currentTime);
-    gainCenter.offset.setValueAtTime(swellCenterValue, this.audioContext.currentTime);
-    gainLfo.frequency.setValueAtTime(swellFrequency, this.audioContext.currentTime);
-    gainLfoDepth.gain.setValueAtTime(swellAmplitude, this.audioContext.currentTime);
+    panCenter.offset.setValueAtTime(driftCenter, now);
+    panLfo.frequency.setValueAtTime(driftFrequency, now);
+    panLfoDepth.gain.setValueAtTime(driftAmplitude, now);
+    gainCenter.offset.setValueAtTime(swellCenterValue, now);
+    gainLfo.frequency.setValueAtTime(swellFrequency, now);
+    gainLfoDepth.gain.setValueAtTime(swellAmplitude, now);
 
     let sourceStage = input;
     if (filter.enabled) {
@@ -3256,6 +3277,13 @@ const state = {
   sampleLoadingDots: 0,
   sampleLoadingIntervalId: null,
   mixerAnimationFrameId: null,
+  mixerMeterAnimationFrameId: null,
+  mixerMeterPeaks: Array.from({ length: TRACK_COUNT + 1 }, () => ({
+    level: 0,
+    heldLevel: 0,
+    holdUntil: 0,
+    clipUntil: 0,
+  })),
   mixerDragState: {
     active: false,
     trackIndex: null,
@@ -5579,9 +5607,11 @@ function ensureAudio() {
     state.transport = new TransportLayer(state.audioContext, state.playback, state);
     state.transport.onStep = updateCurrentStep;
     state.playback.output.gain.value = state.mixVolume;
+    ensureMixerPeakMeterAnimation();
   }
   return state.audioContext.resume().then(() => {
     syncAllTrackBuses();
+    ensureMixerAnimation();
     setDiagnostics(`audio context running (${state.audioContext.state}).`, "ok");
   });
 }
@@ -6104,10 +6134,15 @@ function isMidiNoteInTrackScale(track, midiNote) {
   return scale.intervals.includes(relativePitchClass);
 }
 
-function getTrackModulationValues(track, timeSeconds = 0) {
-  const drift = getTrackDrift(track);
-  const swell = getTrackSwell(track);
-  const driftPhase = drift.enabled ? Math.sin((timeSeconds / clampLfoRateSeconds(drift.rate, 1.5)) * Math.PI * 2) : null;
+function getTrackModulationValues(track, timeSeconds = 0, trackIndex = -1) {
+  const playbackPattern = getTrackBusPattern(track);
+  const drift = playbackPattern?.effects?.drift ?? getTrackDrift(track);
+  const swell = playbackPattern?.effects?.swell ?? getTrackSwell(track);
+  const panLfo = state.playback?.trackBuses?.[trackIndex];
+  const driftPhaseRadians = panLfo
+    ? panLfo.panLfoPhase + (2 * Math.PI * panLfo.panLfoFrequency * Math.max(0, timeSeconds - panLfo.panLfoPhaseTime))
+    : (timeSeconds / clampLfoRateSeconds(drift.rate, 1.5)) * Math.PI * 2;
+  const driftPhase = drift.enabled ? Math.sin(driftPhaseRadians) : null;
   const swellPhase = swell.enabled ? Math.sin((timeSeconds / clampLfoRateSeconds(swell.rate, 1.8)) * Math.PI * 2) : null;
   const driftAmount = clampModulationAmount(drift.amount, 35) / 100;
   const swellAmount = clampModulationAmount(swell.amount, 18) / 100;
@@ -6125,7 +6160,7 @@ function getTrackModulationValues(track, timeSeconds = 0) {
 function paintMixerModulation() {
   if (!ui.mixerGrid) return;
   const timeSeconds = state.audioContext ? state.audioContext.currentTime : 0;
-  const transportRunning = isTransportRunning();
+  const audioRunning = state.audioContext?.state === "running";
   ui.mixerGrid.querySelectorAll(".mixer-strip").forEach((strip) => {
     if (strip.dataset.mixerKind === "master") return;
     const trackIndex = Number(strip.dataset.trackIndex);
@@ -6139,8 +6174,8 @@ function paintMixerModulation() {
         pan: clampPan(track.pan),
         volume: Math.max(0, Math.min(1, track.volume)),
       }
-      : transportRunning
-      ? getTrackModulationValues(track, timeSeconds)
+      : audioRunning
+      ? getTrackModulationValues(track, timeSeconds, trackIndex)
       : {
         pan: clampPan(track.pan),
         volume: Math.max(0, Math.min(1, track.volume)),
@@ -6166,6 +6201,81 @@ function paintMixerModulation() {
       panValue.textContent = formatPanValue(modulation.pan);
     }
   });
+}
+
+const MIXER_METER_FLOOR_DB = -60;
+const MIXER_METER_CEILING_DB = 3;
+
+function getPeakDb(level) {
+  return level > 0 ? 20 * Math.log10(level) : Number.NEGATIVE_INFINITY;
+}
+
+function getMixerMeterFill(level) {
+  if (level <= 0) return 0;
+  const db = Math.max(MIXER_METER_FLOOR_DB, Math.min(MIXER_METER_CEILING_DB, getPeakDb(level)));
+  return ((db - MIXER_METER_FLOOR_DB) / (MIXER_METER_CEILING_DB - MIXER_METER_FLOOR_DB)) * 100;
+}
+
+function updatePeakMeter(index, analyser, data, now) {
+  const meterState = state.mixerMeterPeaks[index];
+  const meter = ui.mixerGrid?.querySelector(`[data-mixer-index="${index}"]`);
+  if (!meterState || !analyser || !data || !(meter instanceof HTMLElement)) return;
+
+  analyser.getFloatTimeDomainData(data);
+  let peak = 0;
+  for (let sampleIndex = 0; sampleIndex < data.length; sampleIndex += 1) {
+    peak = Math.max(peak, Math.abs(data[sampleIndex] ?? 0));
+  }
+
+  if (peak >= meterState.level) meterState.level = peak;
+  else meterState.level = Math.max(peak, meterState.level * 0.82);
+
+  if (peak >= meterState.heldLevel || now >= meterState.holdUntil) {
+    meterState.heldLevel = Math.max(peak, meterState.heldLevel * 0.82);
+    meterState.holdUntil = now + 850;
+  }
+  if (peak >= 0.999) meterState.clipUntil = now + 1500;
+
+  const fill = meter.querySelector(".mixer-peak-fill");
+  const hold = meter.querySelector(".mixer-peak-hold");
+  const value = meter.querySelector(".mixer-peak-value");
+  const clipping = now < meterState.clipUntil;
+  const heldDb = getPeakDb(meterState.heldLevel);
+  meter.classList.toggle("clipping", clipping);
+  meter.classList.toggle("hot", !clipping && heldDb >= -12);
+  meter.setAttribute("aria-label", `${index === TRACK_COUNT ? "Main" : `Track ${index + 1}`} peak ${Number.isFinite(heldDb) ? `${heldDb.toFixed(1)} dBFS` : "minus infinity dBFS"}${clipping ? ", clipping" : ""}`);
+  meter.setAttribute("aria-valuenow", String(Number.isFinite(heldDb) ? Math.max(MIXER_METER_FLOOR_DB, Math.min(MIXER_METER_CEILING_DB, heldDb)) : MIXER_METER_FLOOR_DB));
+  meter.setAttribute("aria-valuetext", `${Number.isFinite(heldDb) ? `${heldDb.toFixed(1)} dBFS` : "−∞ dBFS"}${clipping ? ", CLIP" : ""}`);
+  if (fill instanceof HTMLElement) fill.style.setProperty("--peak-fill", `${getMixerMeterFill(meterState.level)}%`);
+  if (hold instanceof HTMLElement) {
+    hold.style.setProperty("--peak-hold", `${getMixerMeterFill(meterState.heldLevel)}%`);
+    hold.style.visibility = meterState.heldLevel > 0 ? "visible" : "hidden";
+  }
+  if (value instanceof HTMLElement) {
+    value.textContent = clipping ? "CLIP" : Number.isFinite(heldDb) ? `${Math.round(heldDb)}` : "−∞";
+  }
+}
+
+function paintMixerPeakMeters() {
+  const playback = state.playback;
+  if (!playback || !ui.mixerGrid) return;
+  const now = performance.now();
+  playback.trackBuses.forEach((bus, index) => updatePeakMeter(index, bus.peakAnalyser, bus.peakData, now));
+  updatePeakMeter(TRACK_COUNT, playback.masterAnalyser, playback.masterPeakData, now);
+}
+
+function animateMixerPeakMeters() {
+  paintMixerPeakMeters();
+  if (!state.playback) {
+    state.mixerMeterAnimationFrameId = null;
+    return;
+  }
+  state.mixerMeterAnimationFrameId = window.requestAnimationFrame(animateMixerPeakMeters);
+}
+
+function ensureMixerPeakMeterAnimation() {
+  if (state.mixerMeterAnimationFrameId || !state.playback) return;
+  state.mixerMeterAnimationFrameId = window.requestAnimationFrame(animateMixerPeakMeters);
 }
 
 function syncMixerSelection() {
@@ -6217,7 +6327,7 @@ function updatePitchPlaybackHighlights() {
 
 function animateMixerModulation() {
   paintMixerModulation();
-  if (!isTransportRunning()) {
+  if (state.audioContext?.state !== "running") {
     state.mixerAnimationFrameId = null;
     return;
   }
@@ -6225,7 +6335,7 @@ function animateMixerModulation() {
 }
 
 function ensureMixerAnimation() {
-  if (state.mixerAnimationFrameId || !isTransportRunning()) return;
+  if (state.mixerAnimationFrameId || state.audioContext?.state !== "running") return;
   state.mixerAnimationFrameId = window.requestAnimationFrame(animateMixerModulation);
 }
 
@@ -8738,7 +8848,22 @@ function renderMixer() {
     meter.style.setProperty("--meter-fill", `${Math.round(track.volume * 100)}%`);
     meter.innerHTML = '<div class="mixer-meter-fill"></div><div class="mixer-meter-thumb"></div>';
     bindMixerMeter(meter, index);
-    controls.append(meter);
+    const levelRow = document.createElement("div");
+    levelRow.className = "mixer-level-row";
+    levelRow.append(meter);
+
+    const peakMeter = document.createElement("div");
+    peakMeter.className = "mixer-peak-meter";
+    peakMeter.dataset.mixerRole = "peak";
+    peakMeter.dataset.mixerIndex = String(index);
+    peakMeter.title = `Track ${track.id} peak level in dBFS`;
+    peakMeter.setAttribute("role", "meter");
+    peakMeter.setAttribute("aria-valuemin", "-60");
+    peakMeter.setAttribute("aria-valuemax", "3");
+    peakMeter.setAttribute("aria-valuenow", "-60");
+    peakMeter.innerHTML = '<span class="mixer-peak-value">−∞</span><div class="mixer-peak-track"><div class="mixer-peak-fill"></div><div class="mixer-peak-hold"></div></div>';
+    levelRow.append(peakMeter);
+    controls.append(levelRow);
 
     const panKnob = document.createElement("button");
     panKnob.type = "button";
@@ -8821,15 +8946,32 @@ function renderMixer() {
   masterMeter.style.setProperty("--meter-fill", `${Math.round(state.mixVolume * 100)}%`);
   masterMeter.innerHTML = '<div class="mixer-meter-fill"></div><div class="mixer-meter-thumb"></div>';
   bindMasterMixerMeter(masterMeter);
-  masterControls.append(masterMeter);
+  const masterLevelRow = document.createElement("div");
+  masterLevelRow.className = "mixer-level-row";
+  masterLevelRow.append(masterMeter);
+
+  const masterPeakMeter = document.createElement("div");
+  masterPeakMeter.className = "mixer-peak-meter";
+  masterPeakMeter.dataset.mixerRole = "peak";
+  masterPeakMeter.dataset.mixerIndex = String(TRACK_COUNT);
+  masterPeakMeter.title = "Main output peak level in dBFS";
+  masterPeakMeter.setAttribute("role", "meter");
+  masterPeakMeter.setAttribute("aria-valuemin", "-60");
+  masterPeakMeter.setAttribute("aria-valuemax", "3");
+  masterPeakMeter.setAttribute("aria-valuenow", "-60");
+  masterPeakMeter.innerHTML = '<span class="mixer-peak-value">−∞</span><div class="mixer-peak-track"><div class="mixer-peak-fill"></div><div class="mixer-peak-hold"></div></div>';
+  masterLevelRow.append(masterPeakMeter);
+  masterControls.append(masterLevelRow);
 
   masterStrip.append(masterControls);
   ui.mixerGrid.append(masterStrip);
 
   paintMasterMixMeter();
   paintMixerModulation();
+  paintMixerPeakMeters();
   syncMixerSelection();
   ensureMixerAnimation();
+  ensureMixerPeakMeterAnimation();
 }
 
 function renderEffectsMatrix() {
