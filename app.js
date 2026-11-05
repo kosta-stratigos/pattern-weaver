@@ -4877,6 +4877,11 @@ function initializeComposerPlayback({ resetSlotIndex = true } = {}) {
 }
 
 function advanceComposerSlot() {
+  state.tracks.forEach((track, trackIndex) => {
+    const completedPattern = getComposerAssignedPattern(trackIndex, state.composer.currentSlotIndex);
+    if (completedPattern) applyPatternVariationsAtPatternBoundary(track, completedPattern);
+  });
+
   const currentRepeats = getComposerSlotRepeatCount(state.composer.currentSlotIndex);
   if (state.composer.currentSlotRepeat + 1 < currentRepeats) {
     state.composer.currentSlotRepeat += 1;
