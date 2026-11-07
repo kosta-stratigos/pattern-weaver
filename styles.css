@@ -992,17 +992,29 @@ h2 {
   grid-template-columns: minmax(520px, 2fr) minmax(280px, 0.9fr);
   grid-template-areas:
     "sample processing"
-    "playback processing";
+    "controls processing";
   align-items: stretch;
+}
+
+.grain-envelope-slot,
+.chop-envelope-slot { display: contents; }
+.chop-playhead-group,
+.chop-playback-group {
+  align-content: start;
+  min-width: 0;
+}
+
+.chop-voice-controls-grid {
+  grid-area: controls;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+  min-width: 0;
 }
 
 .chop-sample-group {
   grid-area: sample;
-  min-width: 0;
-}
-
-.chop-playback-group {
-  grid-area: playback;
   min-width: 0;
 }
 
@@ -1031,10 +1043,6 @@ h2 {
   gap: 10px;
   align-content: start;
   min-width: 0;
-  padding: 10px;
-  border: 1px solid rgba(126, 205, 185, 0.14);
-  border-radius: var(--pane-radius);
-  background: rgba(255, 255, 255, 0.018);
 }
 
 .chop-playback-options-subgroup {
@@ -2647,6 +2655,7 @@ input[type="range"]::-moz-range-thumb {
   .chop-playback-grid,
   .grain-settings-stack,
   .grain-voice-controls-grid,
+  .chop-voice-controls-grid,
   .chop-toggle-row {
     grid-template-columns: 1fr;
   }
@@ -2654,8 +2663,8 @@ input[type="range"]::-moz-range-thumb {
   .chop-settings-stack {
     grid-template-areas:
       "sample"
-      "processing"
-      "playback";
+      "controls"
+      "processing";
   }
 
   .grain-settings-stack {

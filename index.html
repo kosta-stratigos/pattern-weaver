@@ -238,7 +238,8 @@
                       </label>
                     </section>
 
-                    <section class="control-group nested-control-group grain-playback-subgroup grain-envelope-group" aria-labelledby="grain-envelope-title">
+                    <div id="grain-envelope-slot" class="grain-envelope-slot"></div>
+                    <section id="shared-voice-envelope-group" class="control-group nested-control-group grain-playback-subgroup grain-envelope-group" aria-labelledby="grain-envelope-title">
                       <div class="control-group-head">
                         <h3 id="grain-envelope-title">Envelope / Window</h3>
                       </div>
@@ -484,61 +485,27 @@
                 </section>
 
                 <section id="chop-settings-group" class="control-stack chop-settings-stack ui-hidden" aria-label="Chop voice settings">
-                  <section class="control-group nested-control-group chop-playback-group" aria-labelledby="chop-playback-title">
-                    <div class="control-group-head">
-                      <h3 id="chop-playback-title">Playback</h3>
-                    </div>
-                    <div class="control-grid track-settings-grid chop-playback-grid">
-                      <div class="chop-playback-subgroup" aria-label="Playback position settings">
-                        <label class="compact-field">
-                          Playhead Behavior
-                          <select id="chop-playhead-behavior">
-                            <option value="fixed">Fixed Position</option>
-                            <option value="random">Random</option>
-                            <option value="note">Jump to Note</option>
-                          </select>
-                        </label>
-                        <label class="compact-field" id="chop-playhead-position-field">
-                          Playhead Position
-                          <div class="slider-row">
-                            <input id="chop-playhead-position" type="range" min="0" max="100" value="0" />
-                            <span id="chop-playhead-position-value" class="value-pill">0%</span>
-                          </div>
-                        </label>
-                        <label class="compact-field">
-                          Playback Length
-                          <div class="slider-row">
-                            <input id="chop-playback-length" type="range" min="50" max="1500" step="10" value="150" />
-                            <span id="chop-playback-length-value" class="value-pill">150ms</span>
-                          </div>
-                        </label>
+                  <div class="chop-voice-controls-grid">
+                    <section class="control-group nested-control-group chop-playhead-group" aria-labelledby="chop-playhead-title">
+                      <div class="control-group-head"><h3 id="chop-playhead-title">Playhead Behavior</h3></div>
+                      <div class="chop-playback-subgroup" aria-label="Playhead behavior settings">
+                        <label class="compact-field">Mode<select id="chop-playhead-behavior"><option value="fixed">Fixed Position</option><option value="random">Random</option><option value="note">Jump to Note</option></select></label>
+                        <label class="compact-field" id="chop-playhead-position-field">Playhead Position<div class="slider-row"><input id="chop-playhead-position" type="range" min="0" max="100" value="0" /><span id="chop-playhead-position-value" class="value-pill">0%</span></div></label>
+                        <label class="compact-field">Playback Length<div class="slider-row"><input id="chop-playback-length" type="range" min="50" max="1500" step="10" value="150" /><span id="chop-playback-length-value" class="value-pill">150ms</span></div></label>
                       </div>
+                    </section>
+                    <section class="control-group nested-control-group chop-playback-group" aria-labelledby="chop-playback-title">
+                      <div class="control-group-head"><h3 id="chop-playback-title">Playback</h3></div>
                       <div class="chop-playback-subgroup chop-playback-options-subgroup" aria-label="Playback mode settings">
                         <div class="chop-toggle-row">
-                          <div class="chop-toggle-control">
-                            <span class="composer-playback-label">Reverse</span>
-                            <button id="chop-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off">
-                              <span class="composer-slot-switch-track" aria-hidden="true">
-                                <span class="composer-slot-switch-thumb"></span>
-                              </span>
-                            </button>
-                          </div>
-                          <div class="chop-toggle-control">
-                            <span class="composer-playback-label">Use Note Pitch</span>
-                            <button id="chop-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Use note pitch off">
-                              <span class="composer-slot-switch-track" aria-hidden="true">
-                                <span class="composer-slot-switch-thumb"></span>
-                              </span>
-                            </button>
-                          </div>
+                          <div class="chop-toggle-control"><span class="composer-playback-label">Reverse</span><button id="chop-reverse-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Reverse playback off"><span class="composer-slot-switch-track" aria-hidden="true"><span class="composer-slot-switch-thumb"></span></span></button></div>
+                          <div class="chop-toggle-control"><span class="composer-playback-label">Use Note Pitch</span><button id="chop-use-note-pitch-toggle" type="button" class="composer-slot-switch" aria-pressed="false" aria-label="Use note pitch off"><span class="composer-slot-switch-track" aria-hidden="true"><span class="composer-slot-switch-thumb"></span></span></button></div>
                         </div>
-                        <div class="voice-operation-button-group chop-playback-mode-group" role="group" aria-label="Chop playback mode">
-                          <button id="chop-play-one-shot" type="button">1 Shot</button>
-                          <button id="chop-play-loop" type="button">Loop</button>
-                        </div>
+                        <div class="voice-operation-button-group chop-playback-mode-group" role="group" aria-label="Chop playback mode"><button id="chop-play-one-shot" type="button">1 Shot</button><button id="chop-play-loop" type="button">Loop</button></div>
                       </div>
-                    </div>
-                  </section>
+                    </section>
+                    <div id="chop-envelope-slot" class="chop-envelope-slot"></div>
+                  </div>
 
                   <section class="control-group nested-control-group chop-processing-group" aria-labelledby="chop-processing-title">
                     <div class="control-group-head">

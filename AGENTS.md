@@ -22,7 +22,7 @@ Use this default loop:
 
 1. Align on requirements and clarify the intended behavior when needed.
 2. Develop locally with focused edits.
-3. Start localhost so the user can try the change.
+3. After each round of changes, start localhost and open the app in a browser so the user can inspect it in the working directory; keep it running for feedback.
 4. Let the user provide feedback from the running app.
 5. Iterate locally as needed.
 6. Deploy to remote after the local feedback loop is accepted or when explicitly asked.

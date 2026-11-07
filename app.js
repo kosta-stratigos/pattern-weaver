@@ -2146,19 +2146,15 @@ class PlaybackLayer {
     const panSide = Math.sign(clampPan(panDirection));
     const voicePan = Math.abs(panValue) > 0.001 || panSide !== 0 ? this.audioContext.createStereoPanner() : null;
     source.connect(processingNodes.input);
-    if (grainGain) {
-      processingNodes.output.connect(grainGain);
-      grainGain.connect(voiceGain);
-    } else {
-      processingNodes.output.connect(voiceGain);
-    }
+    processingNodes.output.connect(voiceGain);
+    if (grainGain) voiceGain.connect(grainGain);
     const busInput = outputNode ?? this.trackBuses?.[trackIndex]?.input ?? this.output;
     if (voicePan) {
       voicePan.pan.setValueAtTime(panValue, when);
-      voiceGain.connect(voicePan);
+      (grainGain ?? voiceGain).connect(voicePan);
       voicePan.connect(busInput);
     } else {
-      voiceGain.connect(busInput);
+      (grainGain ?? voiceGain).connect(busInput);
     }
     if (!outputNode) this.scheduleTrackRepeats(trackIndex, voicePan ?? voiceGain, when);
 
@@ -2486,6 +2482,7 @@ class PlaybackLayer {
       loopEnd: window.endTime,
       sustainDuration: Math.max(playbackDuration, noteDuration ?? playbackDuration),
       envelope: track.envelope,
+      grainEnvelope: voice.grainEnvelope,
       sampleLayer,
       processing: {
         filterType: voice.chopFilterType,
@@ -6766,7 +6763,7 @@ function renderPatternVoiceOptions() {
   state.voices.forEach((voice, index) => {
     const option = document.createElement("option");
     option.value = String(index);
-    option.textContent = formatVoiceName(voice, index);
+    option.textContent = `${formatVoiceName(voice, index)} - ${formatModeLabel(voice.mode)}`;
     ui.patternVoiceSelect.append(option);
   });
 }
@@ -8684,6 +8681,59 @@ function getSelectedSampleVoiceCanvases() {
   };
 }
 
+function drawChopPatternNoteOverlay(canvas, voice, layer, trackContext) {
+  if (!(canvas instanceof HTMLCanvasElement) || voice?.chopPlayheadBehavior !== "note" || !layer?.buffer) return;
+  const notes = getChopJumpNotePositions(trackContext);
+  if (!notes?.length) return;
+
+  const { startTime, duration } = getVoiceSampleRegionBounds(voice, layer);
+  if (duration <= 0) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const { width, height } = canvas;
+  const noteDivisor = Math.max(1, notes.length - 1);
+  const visibleWidth = canvas.clientWidth || width;
+  const labelStride = Math.max(1, Math.ceil(22 / (visibleWidth / noteDivisor)));
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = '10px "Lexend Deca", "Avenir Next", sans-serif';
+
+  notes.forEach((note, index) => {
+    const playbackWindow = getChopPlaybackWindow(voice, layer, note, trackContext);
+    if (!playbackWindow) return;
+    const playheadTime = playbackWindow.playhead;
+    const x = Math.max(0, Math.min(width, ((playheadTime - startTime) / duration) * width));
+    const left = Math.max(0, Math.min(width, ((playbackWindow.startTime - startTime) / duration) * width));
+    const right = Math.max(left, Math.min(width, ((playbackWindow.endTime - startTime) / duration) * width));
+
+    ctx.fillStyle = index % 2 === 0 ? "rgba(79, 196, 184, 0.055)" : "rgba(255, 184, 77, 0.045)";
+    ctx.fillRect(left, 0, Math.max(1, right - left), height);
+
+    ctx.strokeStyle = index % 2 === 0 ? "rgba(79, 196, 184, 0.52)" : "rgba(255, 184, 77, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (index % labelStride !== 0 && index !== notes.length - 1) return;
+    const label = formatMidiNote(note);
+    const labelWidth = Math.max(19, ctx.measureText(label).width + 6);
+    const labelX = Math.max(labelWidth / 2 + 2, Math.min(width - labelWidth / 2 - 2, x));
+    ctx.fillStyle = "rgba(7, 20, 18, 0.86)";
+    ctx.fillRect(labelX - labelWidth / 2, 3, labelWidth, 16);
+    ctx.fillStyle = "rgba(232, 242, 255, 0.94)";
+    ctx.fillText(label, labelX, 11);
+  });
+
+  ctx.restore();
+}
+
 function drawChopWaveforms() {
   const { waveform, overview } = getSelectedSampleVoiceCanvases();
   if (!waveform || !overview) return;
@@ -8713,6 +8763,9 @@ function drawChopWaveforms() {
     playheadLength,
     playheadReverse: voice.reverse,
   });
+  if (isChop) {
+    drawChopPatternNoteOverlay(waveform, voice, layer, getChopTrackContextForVoice(state.selectedVoiceIndex));
+  }
   if (voice.mode === "granular") {
     drawGrainPlaybackOverlay({
       canvas: waveform,
@@ -9823,6 +9876,15 @@ function syncUi() {
   const synthMode = voice.mode === "synth";
   const fmMode = voice.mode === "fm";
   const chopMode = voice.mode === "chop";
+  const sharedVoiceEnvelope = document.querySelector("#shared-voice-envelope-group");
+  const grainEnvelopeSlot = document.querySelector("#grain-envelope-slot");
+  const chopEnvelopeSlot = document.querySelector("#chop-envelope-slot");
+  if (sharedVoiceEnvelope && grainEnvelopeSlot && chopEnvelopeSlot) {
+    const targetEnvelopeSlot = chopMode ? chopEnvelopeSlot : grainEnvelopeSlot;
+    if (sharedVoiceEnvelope.parentElement !== targetEnvelopeSlot) {
+      targetEnvelopeSlot.append(sharedVoiceEnvelope);
+    }
+  }
   const sampleVoiceModeLabel = voice.mode === "chop" ? "Chop" : "Grain";
   const sampleVoiceTitle = document.querySelector("#sample-voice-group-title");
   if (sampleVoiceTitle instanceof HTMLElement) sampleVoiceTitle.textContent = sampleVoiceModeLabel;
