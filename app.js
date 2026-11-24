@@ -329,21 +329,21 @@ const SAMPLE_LIBRARY_FALLBACK = [
   { name: "95721__elankford__pump-organ-mid-c.wav", url: "./samples/95721__elankford__pump-organ-mid-c.wav" },
 ].map((entry) => ({ ...entry, id: entry.name, source: "library" }));
 const DEFAULT_PATTERN_BAR_COUNT = 2;
-const MAX_PATTERN_BARS = 8;
+const MAX_PATTERN_BARS = 4;
 const SEQUENCER_BARS_PER_ROW = 2;
 const SEQUENCER_ROW_COUNT = MAX_PATTERN_BARS / SEQUENCER_BARS_PER_ROW;
 const BASE_GRID_STEPS_PER_BAR = 32;
 const STEPS_PER_BAR_MAX = 32;
 const BASE_GRID_STEPS = BASE_GRID_STEPS_PER_BAR * MAX_PATTERN_BARS;
 const MAX_PATTERN_CELLS = STEPS_PER_BAR_MAX * MAX_PATTERN_BARS;
-const TRACK_COUNT = 4;
+const TRACK_COUNT = 8;
 const TRACK_PATTERN_COUNT = 8;
 const COMPOSER_SLOT_COUNT = 16;
 const PITCH_LANE_NOTE_COUNT = 60;
 const PITCH_LANE_START_MIDI = 24;
 const PITCH_LANE_REFERENCE_MIDI = 60;
 const SYNTH_TUNE_DEFAULT_MIDI = 38;
-const TRACK_COLORS = ["#59d0ff", "#ff8f5a", "#8dff7a", "#ffd34d"];
+const TRACK_COLORS = ["#59d0ff", "#ff8f5a", "#8dff7a", "#ffd34d", "#c18bff", "#ff6f91", "#63e6be", "#a3a3ff"];
 const EFFECT_KEYS = ["filter", "delay", "drift", "swell"];
 const EFFECT_LABELS = {
   filter: "Filter",
@@ -415,6 +415,10 @@ const DEFAULT_TRACK_PITCH_FILLS = [
   { type: "rising", from: 67, to: 78 },
   { type: "rising", from: 53, to: 64 },
   { type: "rising", from: 48, to: 59 },
+  { type: "rising", from: 60, to: 71 },
+  { type: "rising", from: 55, to: 66 },
+  { type: "rising", from: 41, to: 52 },
+  { type: "rising", from: 36, to: 47 },
 ];
 const SCALE_OPTIONS = [
   { value: "chromatic", label: "Chromatic", intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
@@ -5814,10 +5818,6 @@ function getMidiPitchClass(midiNote) {
   return ((midiNote % 12) + 12) % 12;
 }
 
-function isBlackKey(midiNote) {
-  return [1, 3, 6, 8, 10].includes(getMidiPitchClass(midiNote));
-}
-
 function getTrackPitchMidi(track) {
   const voice = getTrackVoice(track);
   if (voice.mode === "synth" || voice.mode === "fm") return voice.synthTuneMidi;
@@ -6308,22 +6308,25 @@ function paintMasterMixMeter() {
 
 function updatePitchPlaybackHighlights() {
   if (!ui.pitchLanes) return;
-  ui.pitchLanes.querySelectorAll(".pitch-key").forEach((key) => {
-    if (!(key instanceof HTMLElement)) return;
-    const trackIndex = Number(key.dataset.trackIndex);
-    const midiNote = Number(key.dataset.midiNote);
+  ui.pitchLanes.querySelectorAll(".pitch-dot").forEach((dot) => {
+    if (!(dot instanceof HTMLElement)) return;
+    const trackIndex = Number(dot.dataset.trackIndex);
+    const midiNote = Number(dot.dataset.midiNote);
     const track = state.tracks[trackIndex];
     if (!track || !Number.isFinite(midiNote)) return;
     const highlightMidi = getTrackPlaybackHighlightMidi(track);
     if (!Number.isFinite(highlightMidi)) {
-      key.classList.remove("is-active");
+      dot.classList.remove("is-active");
+      dot.setAttribute("aria-pressed", "false");
       return;
     }
     const activeMidi = Math.max(
       PITCH_LANE_START_MIDI,
       Math.min(PITCH_LANE_START_MIDI + PITCH_LANE_NOTE_COUNT - 1, highlightMidi),
     );
-    key.classList.toggle("is-active", midiNote === activeMidi);
+    const isActive = midiNote === activeMidi;
+    dot.classList.toggle("is-active", isActive);
+    dot.setAttribute("aria-pressed", String(isActive));
   });
 }
 
@@ -6802,6 +6805,26 @@ function renderPitchLanes() {
   ui.pitchLanes.innerHTML = "";
   populatePitchFillNoteOptions();
 
+  const octaveRow = document.createElement("div");
+  octaveRow.className = "pitch-octave-row";
+  const octaveLabelSpacer = document.createElement("div");
+  octaveLabelSpacer.className = "pitch-octave-spacer";
+  const octaveMarkers = document.createElement("div");
+  octaveMarkers.className = "pitch-octave-markers";
+  const firstOctave = Math.floor(PITCH_LANE_START_MIDI / 12) - 1;
+  const lastMidiNote = PITCH_LANE_START_MIDI + PITCH_LANE_NOTE_COUNT - 1;
+  const lastNoteLabel = `${NOTE_NAMES[getMidiPitchClass(lastMidiNote)]}${Math.floor(lastMidiNote / 12) - 1}`;
+  for (let octaveIndex = 0; octaveIndex < PITCH_LANE_NOTE_COUNT / 12; octaveIndex += 1) {
+    const marker = document.createElement("span");
+    marker.style.gridColumn = `${octaveIndex * 12 + 1} / span 12`;
+    marker.textContent = `C${firstOctave + octaveIndex}`;
+    octaveMarkers.append(marker);
+  }
+  const octaveScaleSpacer = document.createElement("div");
+  octaveScaleSpacer.className = "pitch-octave-spacer";
+  octaveRow.append(octaveLabelSpacer, octaveMarkers, octaveScaleSpacer);
+  ui.pitchLanes.append(octaveRow);
+
   state.tracks.forEach((track, index) => {
     const lane = document.createElement("div");
     lane.className = "pitch-lane";
@@ -6822,11 +6845,13 @@ function renderPitchLanes() {
     });
     lane.append(label);
 
-    const keyboard = document.createElement("div");
-    keyboard.className = "pitch-keyboard";
-    keyboard.style.setProperty("--track-color", track.color);
-    keyboard.style.setProperty("--track-color-soft", hexToRgba(track.color, 0.16));
-    keyboard.style.setProperty("--track-color-strong", hexToRgba(track.color, 0.34));
+    const dotGrid = document.createElement("div");
+    dotGrid.className = "pitch-dot-grid";
+    dotGrid.setAttribute("role", "group");
+    dotGrid.setAttribute("aria-label", `${formatTrackName(track, index)} pitch controls, C${firstOctave} to ${lastNoteLabel}`);
+    dotGrid.style.setProperty("--track-color", track.color);
+    dotGrid.style.setProperty("--track-color-soft", hexToRgba(track.color, 0.2));
+    dotGrid.style.setProperty("--track-color-strong", hexToRgba(track.color, 0.52));
 
     const highlightMidi = getTrackPlaybackHighlightMidi(track);
     const activeMidi = Number.isFinite(highlightMidi)
@@ -6837,27 +6862,28 @@ function renderPitchLanes() {
       : null;
     for (let noteIndex = 0; noteIndex < PITCH_LANE_NOTE_COUNT; noteIndex += 1) {
       const midiNote = PITCH_LANE_START_MIDI + noteIndex;
-      const key = document.createElement("button");
-      key.type = "button";
-      key.className = "pitch-key";
-      if (isBlackKey(midiNote)) key.classList.add("is-black");
-      if (getMidiPitchClass(midiNote) === D_ROOT_PITCH_CLASS) key.classList.add("is-root");
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "pitch-dot";
+      if (getMidiPitchClass(midiNote) === D_ROOT_PITCH_CLASS) dot.classList.add("is-root");
       if (track.scaleMode !== "chromatic" && isMidiNoteInTrackScale(track, midiNote)) {
-        key.classList.add("is-in-scale");
+        dot.classList.add("is-in-scale");
       }
       if (activeMidi !== null && midiNote === activeMidi) {
-        key.classList.add("is-active");
+        dot.classList.add("is-active");
       }
       if (state.pitchRangeAnchorMidi === midiNote) {
-        key.classList.add("is-range-anchor");
+        dot.classList.add("is-range-anchor");
       }
       if (pitchKeyClickFeedback?.trackIndex === index && pitchKeyClickFeedback.midiNote === midiNote) {
-        key.classList.add("is-click-feedback");
+        dot.classList.add("is-click-feedback");
       }
-      key.dataset.trackIndex = String(index);
-      key.dataset.midiNote = String(midiNote);
-      key.title = `${NOTE_NAMES[getMidiPitchClass(midiNote)]}${Math.floor(midiNote / 12) - 1}`;
-      key.addEventListener("click", (event) => {
+      dot.dataset.trackIndex = String(index);
+      dot.dataset.midiNote = String(midiNote);
+      dot.setAttribute("aria-label", `${formatTrackName(track, index)}, ${NOTE_NAMES[getMidiPitchClass(midiNote)]}${Math.floor(midiNote / 12) - 1}`);
+      dot.setAttribute("aria-pressed", String(activeMidi === midiNote));
+      dot.title = `${NOTE_NAMES[getMidiPitchClass(midiNote)]}${Math.floor(midiNote / 12) - 1}`;
+      dot.addEventListener("click", (event) => {
         pulsePitchKeyClickFeedback(index, midiNote);
         handlePitchKeyClick(index, midiNote, event);
         syncUi();
@@ -6869,13 +6895,14 @@ function renderPitchLanes() {
         drawWaveform();
         writeStoredSession();
       });
-      keyboard.append(key);
+      dotGrid.append(dot);
     }
 
-    lane.append(keyboard);
+    lane.append(dotGrid);
 
     const scaleSelect = document.createElement("select");
     scaleSelect.className = "pitch-scale-select";
+    scaleSelect.setAttribute("aria-label", `${formatTrackName(track, index)} pitch scale`);
     SCALE_OPTIONS.forEach((option) => {
       const element = document.createElement("option");
       element.value = option.value;

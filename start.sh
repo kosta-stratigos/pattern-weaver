@@ -15,7 +15,7 @@ fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${0}")" && pwd)"
 
-echo "Starting Granular Chop Lab from:"
+echo "Starting Pattern Weaver from:"
 echo "${SCRIPT_DIR}"
 echo
 echo "Open http://localhost:${PORT}"

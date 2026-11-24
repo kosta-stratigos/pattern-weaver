@@ -2,8 +2,9 @@
 
 ## Project context
 
-Granular Chop Lab is a dependency-free browser prototype for sample import, waveform
-editing, granular playback, chop triggering, and BPM-synced sequencing.
+Pattern Weaver is a dependency-free browser music-making prototype for sample import,
+waveform editing, granular playback, synth voices, chop triggering, and BPM-synced
+sequencing and composition.
 
 Keep the project lightweight unless there is a strong reason to add dependencies.
 Prefer focused prototype improvements over broad architectural refactors.
@@ -22,7 +23,7 @@ Use this default loop:
 
 1. Align on requirements and clarify the intended behavior when needed.
 2. Develop locally with focused edits.
-3. After each round of changes, start localhost and open the app in a browser so the user can inspect it in the working directory; keep it running for feedback.
+3. After each round of changes, start localhost and leave the app running so the user can inspect it; share the local URL, but do not open a browser tab inside ChatGPT.
 4. Let the user provide feedback from the running app.
 5. Iterate locally as needed.
 6. Deploy to remote after the local feedback loop is accepted or when explicitly asked.

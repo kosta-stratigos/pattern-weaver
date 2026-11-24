@@ -4,6 +4,8 @@ Notable project milestones and changes. Dates are based on the repository's comm
 
 ## Unreleased
 
+- Expanded the app from four tracks and voices to eight, and changed the pitch pane to a compact dot grid.
+- Limited track patterns to four bars to keep the sequencer compact with the additional tracks.
 - Renamed the existing Synth voice to Mono Synth and added an FM Synth voice.
 - Corrected voice type capitalization and ensured FM Synth only displays its own settings panel.
 - Expanded FM Synth to two serial modulators and a carrier, with per-operator wave sculpt, selectable carrier feedback, and an output filter.

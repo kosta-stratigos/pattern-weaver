@@ -159,7 +159,7 @@ button.danger {
 .layout {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-template-rows: minmax(162px, auto) minmax(180px, auto) minmax(180px, auto) minmax(180px, auto);
+  grid-template-rows: minmax(162px, auto) minmax(180px, auto) minmax(58px, auto) minmax(180px, auto);
   gap: 12px;
   align-items: stretch;
 }
@@ -179,13 +179,17 @@ button.danger {
 }
 
 .pane-mix {
-  grid-column: 5;
+  grid-column: 5 / span 2;
   grid-row: 1;
 }
 
 .pane-clock {
-  grid-column: 6;
-  grid-row: 1;
+  grid-column: 1 / span 6;
+  grid-row: 3;
+  position: relative;
+  display: block;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 .pane-sequence {
@@ -195,7 +199,7 @@ button.danger {
 
 .pane-workspace {
   grid-column: 1 / span 6;
-  grid-row: 3 / span 2;
+  grid-row: 4;
   padding-top: 0;
 }
 
@@ -289,7 +293,7 @@ h2 {
 
 .mixer-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -306,11 +310,12 @@ h2 {
 }
 
 .pitch-lanes {
-  gap: 5px;
+  gap: 3px;
   padding-top: 2px;
   padding-bottom: 2px;
 }
 
+.pitch-octave-row,
 .pitch-lane {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr) 152px;
@@ -318,16 +323,33 @@ h2 {
   align-items: center;
 }
 
+.pitch-octave-markers,
+.pitch-dot-grid {
+  display: grid;
+  grid-template-columns: repeat(60, minmax(0, 1fr));
+  align-items: center;
+}
+
+.pitch-octave-markers {
+  min-height: 15px;
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.pitch-octave-markers span {
+  padding-left: 2px;
+}
+
 .pitch-lane-label {
-  min-height: 40px;
+  min-height: 22px;
   display: grid;
   align-items: center;
-  padding: 0 9px;
+  padding: 0 7px;
   border-radius: var(--pane-radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text);
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   font-weight: 600;
   font-family: var(--font-display);
   letter-spacing: 0.04em;
@@ -340,127 +362,61 @@ h2 {
   background: var(--track-color-soft);
 }
 
-.pitch-keyboard {
-  display: grid;
-  grid-template-columns: repeat(60, minmax(10px, 1fr));
-  gap: 1px;
-  min-height: 40px;
-  padding: 4px;
+.pitch-dot-grid {
+  min-height: 22px;
   border-radius: var(--pane-radius);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 36%),
-    rgba(255, 255, 255, 0.03);
-  align-items: start;
+  background: rgba(255, 255, 255, 0.025);
 }
 
-.pitch-key {
+.pitch-dot {
   appearance: none;
-  position: relative;
-  overflow: hidden;
-  min-height: 30px;
-  padding: 0;
-  border-radius: 2px;
-  border: 1px solid rgba(212, 235, 225, 0.16);
-  background: linear-gradient(180deg, rgba(245, 252, 248, 0.9), rgba(211, 228, 220, 0.72));
-  transition: opacity 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
-}
-
-.pitch-key::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: rgba(255, 255, 255, 0.5);
-  opacity: 0;
-  pointer-events: none;
-}
-
-.pitch-key.is-black {
-  min-height: 20px;
-  width: 68%;
   justify-self: center;
-  z-index: 2;
-  background: linear-gradient(180deg, rgba(17, 31, 27, 0.98), rgba(5, 12, 10, 0.94));
-  border-color: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28);
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(212, 235, 225, 0.18);
+  background: rgba(212, 235, 225, 0.22);
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
 
-.pitch-key.is-root::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 3px;
-  width: 4px;
-  height: 4px;
-  margin-left: -2px;
-  border-radius: 999px;
-  background: rgba(255, 175, 95, 0.9);
+.pitch-dot:hover {
+  transform: scale(1.45);
+  border-color: rgba(255, 255, 255, 0.78);
 }
 
-.pitch-key.is-in-scale {
-  background: linear-gradient(180deg, rgba(168, 239, 229, 0.92), rgba(98, 199, 186, 0.8));
-  border-color: rgba(79, 196, 184, 0.42);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+.pitch-dot.is-root {
+  border-color: rgba(255, 175, 95, 0.95);
 }
 
-.pitch-key.is-black.is-in-scale {
-  background: linear-gradient(180deg, rgba(92, 197, 183, 0.96), rgba(17, 63, 57, 0.94));
-  border-color: rgba(79, 196, 184, 0.32);
+.pitch-dot.is-in-scale {
+  background: rgba(98, 199, 186, 0.82);
+  border-color: rgba(79, 196, 184, 0.55);
 }
 
-.pitch-key.is-active {
-  background: linear-gradient(180deg, var(--track-color), rgba(255, 255, 255, 0.22));
-  border-color: var(--track-color-strong);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
-  opacity: 1;
+.pitch-dot.is-active {
+  width: 11px;
+  height: 11px;
+  background: var(--track-color);
+  border-color: var(--track-color);
+  box-shadow: 0 0 0 3px var(--track-color-soft);
 }
 
-.pitch-key.is-active.is-black {
-  background: linear-gradient(180deg, var(--track-color), rgba(4, 11, 10, 0.9));
+.pitch-dot:active,
+.pitch-dot.is-click-feedback {
+  background: #fff;
+  border-color: #fff;
+  transform: scale(1.5);
 }
 
-.pitch-key:active,
-.pitch-key.is-click-feedback {
-  border-color: rgba(255, 255, 255, 0.72);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
-}
-
-.pitch-key:active::before,
-.pitch-key.is-click-feedback::before {
-  animation: pitch-key-click-pulse 170ms ease-out both;
-}
-
-.pitch-key.is-black:active,
-.pitch-key.is-black.is-click-feedback {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
-}
-
-@keyframes pitch-key-click-pulse {
-  0% {
-    opacity: 0;
-  }
-
-  24% {
-    opacity: 1;
-  }
-
-  100% {
-    opacity: 0;
-  }
-}
-
-.pitch-key.is-range-anchor {
+.pitch-dot.is-range-anchor {
   outline: 2px solid rgba(255, 175, 95, 0.95);
-  outline-offset: 1px;
-  box-shadow:
-    0 0 0 1px rgba(4, 17, 15, 0.85),
-    0 0 12px rgba(255, 175, 95, 0.32);
-  opacity: 1;
+  outline-offset: 2px;
 }
 
 .pitch-scale-select {
-  min-height: 40px;
+  min-height: 24px;
+  font-size: 0.68rem;
 }
 
 .mix-volume-control {
@@ -1352,6 +1308,53 @@ input[type="range"]::-moz-range-thumb {
 
 .micro-control-grid {
   gap: 10px;
+}
+
+.pane-clock .panel-head {
+  position: absolute;
+  top: 50%;
+  left: 22px;
+  z-index: 1;
+  transform: translateY(-50%);
+  align-items: center;
+  margin: 0;
+}
+
+.clock-ribbon-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(300px, 380px) minmax(220px, 320px);
+  justify-content: center;
+  gap: 26px;
+  align-items: center;
+}
+
+.clock-ribbon-field {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+.clock-ribbon-field .slider-row .value-pill {
+  min-width: 48px;
+  padding: 3px 6px;
+}
+
+.clock-ribbon-transport button {
+  min-height: 36px;
+  border-color: rgba(170, 255, 222, 0.9);
+  background: linear-gradient(135deg, #b6f3d5, #75d8c3);
+  color: #08231e;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.55), 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.clock-ribbon-transport button:hover {
+  border-color: #e0fff1;
+  background: linear-gradient(135deg, #d0ffe5, #91ead4);
 }
 
 .effects-matrix {
@@ -2548,8 +2551,9 @@ input[type="range"]::-moz-range-thumb {
     grid-template-columns: 1fr;
   }
 
-  .pitch-keyboard {
-    grid-template-columns: repeat(60, minmax(7px, 1fr));
+  .pitch-dot-grid,
+  .pitch-octave-markers {
+    grid-template-columns: repeat(60, minmax(0, 1fr));
   }
 
   .effects-matrix-row {
@@ -2686,6 +2690,27 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (max-width: 640px) {
+  .pane-clock {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .pane-clock .panel-head {
+    position: static;
+    transform: none;
+  }
+
+  .clock-ribbon-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .clock-ribbon-field {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
   .momentary-crackle-settings-layout {
     grid-template-columns: 1fr;
   }

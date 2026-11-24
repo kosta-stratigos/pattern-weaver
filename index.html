@@ -49,24 +49,24 @@
           <div class="panel-head">
             <h2>Clock</h2>
           </div>
-          <div class="control-grid micro-control-grid">
-            <label class="compact-field span-2">
+          <div class="clock-ribbon-controls">
+            <label class="compact-field clock-ribbon-field">
               BPM
               <div class="slider-row">
                 <input id="bpm" type="range" min="60" max="180" value="112" />
                 <span id="bpm-value" class="value-pill">112</span>
               </div>
             </label>
-            <label class="compact-field span-2">
+            <div class="transport-single clock-ribbon-transport">
+              <button id="transport-toggle" class="primary">Play</button>
+            </div>
+            <label class="compact-field clock-ribbon-field">
               Swing
               <div class="slider-row">
                 <input id="swing" type="range" min="0" max="100" value="0" />
                 <span id="swing-value" class="value-pill">0%</span>
               </div>
             </label>
-            <div class="transport-single span-2">
-              <button id="transport-toggle" class="primary">Play</button>
-            </div>
           </div>
         </section>
 
@@ -628,10 +628,6 @@
                       <label class="compact-field">
                         Voice
                         <select id="pattern-voice-select">
-                          <option value="0">Voice 1</option>
-                          <option value="1">Voice 2</option>
-                          <option value="2">Voice 3</option>
-                          <option value="3">Voice 4</option>
                         </select>
                       </label>
                     </div>
@@ -645,7 +641,7 @@
                         <label class="compact-field">
                           Bars
                           <div class="slider-row">
-                            <input id="track-bars" type="range" min="1" max="8" value="2" />
+                            <input id="track-bars" type="range" min="1" max="4" value="2" />
                             <span id="track-bars-value" class="value-pill">2</span>
                           </div>
                         </label>

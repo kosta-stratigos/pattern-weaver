@@ -1,45 +1,31 @@
-# Granular Chop Lab
+# Pattern Weaver
 
-Dependency-free browser prototype for a sample-based instrument that combines:
+Pattern Weaver is a lightweight, dependency-free browser music-making prototype. It combines sample playback, granular synthesis, chop sequencing, synth voices, and a pattern-based composition workflow.
 
-- `SampleLayer`: file decoding, region selection, and slice generation
-- `PlaybackLayer`: granular grains and rhythmic slice triggering
-- `TransportLayer`: BPM-synced step sequencing and transport timing
+## Run locally
 
-## Run
-
-Because this uses ES modules, serve the folder with a simple static server instead of opening
-`index.html` directly from `file://`.
-
-Quickest option:
+The app uses JavaScript modules, so serve the project over HTTP instead of opening `index.html` directly.
 
 ```bash
 ./start.sh
 ```
 
-This starts the app at [http://localhost:4173](http://localhost:4173).
+Then open [http://localhost:4173](http://localhost:4173). To use a different port, pass it to the script, for example `./start.sh 8000`.
 
-Examples:
+You can also start a static server with Python:
 
 ```bash
 python3 -m http.server 4173
 ```
 
-Then open [http://localhost:4173](http://localhost:4173).
+## What’s inside
 
-## Prototype features
+- Sample import, waveform display, and editable playback regions
+- Eight tracks with configurable sample, granular, chop, Mono Synth, or FM Synth voices
+- Per-track mixing and effects
+- BPM-synced patterns up to four bars, pitch assignment, pattern switching, and Composer playback
+- A compact five-octave pitch grid with per-track scale controls
+- Pattern and grain envelopes, swing, pitch controls, and performance effects
+- Session naming, saving, and loading
 
-- audio file import
-- waveform display with editable playback region
-- granular mode with grain size, density, spray, pitch, and reverse
-- chop mode with slice count, gate, pitch, reverse, and pattern sequencing
-- BPM transport with 8-16 step pattern grid
-- one-shot trigger via button or space bar
-
-## Known limitations
-
-- reverse playback currently uses a full reversed copy of the loaded buffer, which is fine for a
-  prototype but not ideal for large samples or polyphony-heavy sessions
-- timing is good enough for a prototype but still scheduled from the main thread
-- slice detection is manual and evenly divided, not transient-aware yet
-# grain-and-chop
+The root files (`index.html`, `app.js`, and `styles.css`) are the current working version. `prototype-v1` through `prototype-v6` contain archived snapshots. The `samples/` folder contains bundled example audio used by the app.
