@@ -27,6 +27,12 @@ Use this default loop:
 5. Iterate locally as needed.
 6. Deploy to remote after the local feedback loop is accepted or when explicitly asked.
 
+For GitHub operations such as fetching, pulling, or pushing, use the normal sandboxed
+command first. If it fails due to DNS or network access, retry the same operation
+outside the sandbox when available; do not assume the user's GitHub key or permissions
+are the problem until network access has been checked. Never request or expose private
+keys or tokens. Confirm the target remote and branch before any write operation.
+
 ## Validation ethos
 
 Do not run local Chromium or Playwright validation by default. These checks are useful,
