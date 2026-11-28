@@ -98,6 +98,7 @@ const ui = {
   sessionClearConfirm: document.querySelector("#session-clear-confirm"),
   trackPatternSelect: document.querySelector("#track-pattern-select"),
   patternVoiceSelect: document.querySelector("#pattern-voice-select"),
+  trackNameInput: document.querySelector("#track-name-input"),
   mode: document.querySelector("#mode"),
   grainLocationField: document.querySelector("#grain-location-field"),
   grainLocation: document.querySelector("#grain-location"),
@@ -3135,6 +3136,7 @@ function createTrack(id) {
   return {
     id,
     name: `Track ${id}`,
+    customName: "",
     color: TRACK_COLORS[(id - 1) % TRACK_COLORS.length],
     voiceIndex: id - 1,
     activePatternIndex: 0,
@@ -5168,6 +5170,7 @@ function normalizeTrack(index, source = {}) {
   };
   return {
     ...fallback,
+    customName: typeof source.customName === "string" ? source.customName.slice(0, 48) : fallback.customName,
     color: typeof source.color === "string" ? source.color : fallback.color,
     voiceIndex: Math.max(0, Math.min(TRACK_COUNT - 1, resolvedVoiceIndex)),
     activePatternIndex,
@@ -5405,6 +5408,7 @@ function createSessionSnapshot() {
     voices: state.voices.map(serializeVoice),
     tracks: state.tracks.map((track) => ({
       id: track.id,
+      customName: track.customName,
       color: track.color,
       voiceIndex: track.voiceIndex,
       activePatternIndex: track.activePatternIndex,
@@ -6865,9 +6869,12 @@ function renderPitchLanes() {
       const dot = document.createElement("button");
       dot.type = "button";
       dot.className = "pitch-dot";
-      if (getMidiPitchClass(midiNote) === D_ROOT_PITCH_CLASS) dot.classList.add("is-root");
-      if (track.scaleMode !== "chromatic" && isMidiNoteInTrackScale(track, midiNote)) {
-        dot.classList.add("is-in-scale");
+      const isRoot = getMidiPitchClass(midiNote) === D_ROOT_PITCH_CLASS;
+      const isInScale = isMidiNoteInTrackScale(track, midiNote);
+      if (isRoot) dot.classList.add("is-root");
+      if (!isInScale) {
+        dot.disabled = true;
+        dot.classList.add("is-out-of-scale");
       }
       if (activeMidi !== null && midiNote === activeMidi) {
         dot.classList.add("is-active");
@@ -7411,6 +7418,9 @@ function syncTrackSettingsOverlay() {
       : (currentValue === "add-new" ? "add-new" : desiredValue);
   }
   ui.patternVoiceSelect.value = String(track.voiceIndex);
+  if (ui.trackNameInput instanceof HTMLInputElement) {
+    ui.trackNameInput.value = track.customName ?? "";
+  }
   ui.trackBars.value = String(activePattern.barCount);
   ui.trackBarsValue.textContent = String(activePattern.barCount);
   ui.trackSteps.value = String(activePattern.stepCount);
@@ -9589,7 +9599,15 @@ function renderPattern(activeStep = state.currentTransportStep) {
     const label = document.createElement("button");
     label.className = `pattern-row-label${trackIndex === state.selectedTrackIndex ? " active" : ""}`;
     applyTrackColor(label, track.color);
-    label.innerHTML = `<span class="pattern-row-name">T${track.id}:${displayPatternIndex == null ? "REST" : `P${displayPatternIndex + 1}`}</span>`;
+    const chipName = document.createElement("span");
+    chipName.className = "pattern-row-name";
+    chipName.textContent = `T${track.id} | ${displayPatternIndex == null ? "REST" : `P${displayPatternIndex + 1}`}`;
+    label.append(chipName);
+    const customName = document.createElement("span");
+    customName.className = "pattern-row-custom-name";
+    customName.textContent = track.customName ?? "";
+    if (customName.textContent) customName.title = customName.textContent;
+    label.append(customName);
     label.addEventListener("click", () => {
       openTrackSettingsOverlay(trackIndex);
     });
@@ -10573,6 +10591,12 @@ ui.trackEnvelopeGaussianWidth.addEventListener("input", () => updateSelectedTrac
 ui.trackEnvelopeTukeyTaper.addEventListener("input", () => updateSelectedTrackEnvelope({ tukeyTaper: Number(ui.trackEnvelopeTukeyTaper.value) }));
 ui.patternVoiceSelect.addEventListener("change", () => {
   updateSelectedTrack({ voiceIndex: Number(ui.patternVoiceSelect.value) });
+});
+ui.trackNameInput?.addEventListener("input", () => {
+  const track = getSelectedTrack();
+  track.customName = ui.trackNameInput.value.slice(0, 48);
+  renderPattern();
+  writeStoredSession();
 });
 ui.trackSettingsTrackSelect?.addEventListener("change", () => {
   state.selectedTrackIndex = Math.max(0, Math.min(TRACK_COUNT - 1, Number(ui.trackSettingsTrackSelect.value) || 0));

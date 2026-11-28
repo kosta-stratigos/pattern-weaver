@@ -386,12 +386,23 @@ h2 {
 }
 
 .pitch-dot.is-root {
-  border-color: rgba(255, 175, 95, 0.95);
+  background: rgba(98, 199, 186, 0.82);
+  border-color: rgba(79, 196, 184, 0.75);
+  box-shadow: 0 0 0 2px rgba(98, 199, 186, 0.16);
 }
 
-.pitch-dot.is-in-scale {
-  background: rgba(98, 199, 186, 0.82);
-  border-color: rgba(79, 196, 184, 0.55);
+.pitch-dot.is-out-of-scale,
+.pitch-dot:disabled {
+  background: rgba(151, 160, 163, 0.13);
+  border-color: rgba(151, 160, 163, 0.12);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.pitch-dot:disabled:hover {
+  transform: none;
+  border-color: rgba(151, 160, 163, 0.12);
 }
 
 .pitch-dot.is-active {
@@ -400,6 +411,12 @@ h2 {
   background: var(--track-color);
   border-color: var(--track-color);
   box-shadow: 0 0 0 3px var(--track-color-soft);
+}
+
+.pitch-dot.is-root.is-active {
+  background: rgba(98, 199, 186, 0.92);
+  border-color: rgba(79, 196, 184, 0.9);
+  box-shadow: 0 0 0 3px rgba(98, 199, 186, 0.2);
 }
 
 .pitch-dot:active,
@@ -1188,6 +1205,12 @@ input[type="text"] {
   color: var(--text);
 }
 
+#track-name-input {
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: 0;
+}
+
 select,
 input[type="range"] {
   accent-color: var(--accent);
@@ -1692,7 +1715,7 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-settings-toolbar {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -2364,9 +2387,13 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .pattern-row-label {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
   min-height: 46px;
-  align-items: center;
+  align-content: center;
   padding: 0 6px;
   border-radius: var(--pane-radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2380,11 +2407,25 @@ input[type="range"]::-moz-range-thumb {
 
 .pattern-row-name {
   color: var(--text);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem - 1pt);
   font-weight: 600;
   font-family: var(--font-display);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.pattern-row-custom-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(226, 232, 228, 0.74);
+  font-family: var(--font-body);
+  font-size: calc(0.58rem + 1pt);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pattern-step-lanes {
